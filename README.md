@@ -364,21 +364,64 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 
 ### 直接使用
 
+**这是给普通用户的推荐方式**——下载、安装、连手机，三步就能用，不需要 Node.js，
+也不需要做任何额外配置。
+
 1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.1.0-Setup.exe`
 2. 双击安装（支持自选安装目录，会创建桌面与开始菜单快捷方式）
 3. 用数据线连接手机，打开 USB 调试，应用会自动识别
 
-> 安装包约 525 MB：里面已经带好 ADB/Fastboot 平台工具、scrcpy、常用驱动与固件模板，
-> 装完离线可用，不需要再联网下载任何组件。
+> **安装包是自包含的**：adb/fastboot 平台工具、scrcpy 4.0、安卓 USB 驱动、
+> VC++ 运行时、Magisk、谷歌三件套安装包、固件模板——**约 893.7 MB 运行时资源
+> 全部打包在里面，装完离线可用**，不需要再联网下载任何组件。
+>
+> 体积大是因为内置了这些工具，属于有意设计：修手机时那台电脑不一定方便上网。
+> 下载完建议按 Release 页面公布的 SHA256 校验一下完整性。
 
 ### 从源码运行
 
+> ⚠️ **直接从 Git 克隆的仓库是不完整的。** 为了保持仓库轻量（约 2.1 MB），
+> `resources/` 下 **7 个共约 893.7 MB 的二进制资源目录被 `.gitignore` 排除**，
+> 克隆后并不存在。缺了它们程序能启动，但**大量功能会不可用或直接报错**
+> （见下方对照表）。跑之前先按第 2 步补齐。
+
 ```powershell
+# 1. 克隆并安装依赖
 git clone <仓库地址>
 cd adb-gaoji-assistant
 npm install
+
+# 2. 补齐运行时资源（二选一）
+#    方式 A（推荐）：从 Release 安装包提取
+#      下载 ADB-GaoJi-Assistant-V<版本>-Setup.exe，静默安装到临时目录后，
+#      把 <安装目录>\resources\resources\ 整个复制到本仓库的 resources\ 下。
+#    方式 B：自行准备（版本见 resources/MANIFEST.md）
+#      resources\platform-tools\   adb.exe / fastboot.exe
+#      resources\scrcpy\scrcpy-win64-v4.0\
+#      resources\gms\              谷歌三件套安装包
+#      resources\drivers\ resources\apk\ resources\bundled-tools\ resources\tea-templates\
+
+# 3. 校验资源是否齐全（会逐项列出缺失的文件）
+pwsh scripts/verify-resources.ps1
+
+# 4. 启动
 npm start
 ```
+
+**缺资源时会怎样**（这就是为什么必须补齐）：
+
+| 缺失目录 | 影响 |
+|---|---|
+| `platform-tools/` | **核心功能全部不可用**——设备识别、ADB、Fastboot 全废 |
+| `scrcpy/` | 投屏功能不可用，点开会提示缺少 scrcpy |
+| `gms/` | 谷歌三件套「一键安装」不可用 |
+| `tea-templates/` | Tea 引导制作不可用 |
+| `bundled-tools/` | 9008 救砖、工具箱不可用 |
+| `drivers/` | 「安装驱动」不可用 |
+| `apk/` | Root 与部分应用管理功能不可用 |
+
+**只想用工具、不想折腾？** 直接用 [Release 安装包](#直接使用)，
+里面资源是完整的，装完就能用。
 
 ### 打包
 
@@ -386,6 +429,9 @@ npm start
 npm run dist              # 仅打包 → dist\ADB搞机助手_V<版本>_安装包.exe
 npm run release:install   # CI → 打包 → 归档 → 安装 → 验证 → 提交打 tag
 ```
+
+> **打包同样需要完整的 `resources/`**：缺文件时打出来的安装包会缺功能。
+> 打包前先跑 `pwsh scripts/verify-resources.ps1`。
 
 ## 环境要求
 
@@ -438,7 +484,7 @@ Electron 三层结构，主进程与渲染进程通过 IPC 通信：
 
 ```powershell
 npm run check    # 语法检查（node --check 全部源文件）
-npm test         # 语法检查 + 54 项单元/契约测试
+npm test         # 语法检查 + 55 项单元/契约测试
 npm run ci       # 完整 CI：语法 → 测试 → 依赖审计 → 9 项审计 → 资源校验
 ```
 
@@ -498,7 +544,7 @@ scripts/
   release.ps1             发布流程
   verify-resources.ps1    资源完整性校验
   audit-*.js              10 项契约审计
-tests/                    单元与契约测试（54 项）
+tests/                    单元与契约测试（55 项）
 design/                   界面风格定义、对比页、应用截图
 resources/                运行时资源（不纳入版本控制，见下）
 ```
