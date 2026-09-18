@@ -18,6 +18,7 @@
 - [新增界面风格](#新增界面风格)
 - [提交信息规范](#提交信息规范)
 - [Pull Request 流程](#pull-request-流程)
+- [发布新版本](#发布新版本维护者)
 
 ---
 
@@ -231,6 +232,64 @@ docs: 补充无线配对端口说明
 - 中文文案是否准确、有无误导
 - 测试是否真的能捕获它声称捕获的问题
 - 是否与 `actions.registry.js` 的登记保持一致
+
+---
+
+## 发布新版本（维护者）
+
+发版由维护者执行，普通贡献者不需要跑这套流程。
+
+### 会改动版本号的文件
+
+改版本号时**四处必须同步**，CI 的「项目元数据校验」会检查 `package.json` 与
+`package-lock.json` 是否一致，以及 `VERSIONS.md` 是否含当前版本段落：
+
+| 文件 | 改什么 |
+|---|---|
+| `package.json` | `version` |
+| `package-lock.json` | 根节点与 `packages[""]` 下的 `version`（跑 `npm install` 会自动同步）|
+| `VERSIONS.md` | 新增 `【x.y.z】` 段落，写在最前面 |
+| `README.md` | 徽章里的版本号与下载文件名 |
+
+`resources/` 下的内置工具清单（`resources/MANIFEST.md`）如需同步更新校验值。
+
+### 发布步骤
+
+```powershell
+# 1. 确认全绿
+npm test
+npm run ci
+
+# 2. 打包 + 归档到桌面 + 静默安装 + 验证单窗口 + 展示升级说明
+npm run release:install
+
+# 3. 提交并打 tag（release.ps1 可用 -NoGit 跳过这一步自己控制）
+git push origin main
+git tag v1.1.0
+git push origin v1.1.0
+
+# 4. 在 GitHub 上创建 Release，上传安装包
+$env:GITHUB_TOKEN = '<token>'
+node scripts/upload-release.js v1.1.0 --archive "$env:USERPROFILE\Desktop\ADB搞机助手"
+```
+
+### 关于上传脚本
+
+`scripts/upload-release.js` 显式使用 ASCII 附件名
+（`ADB-GaoJi-Assistant-V<版本>-Setup.exe`）。原因：GitHub 上传附件时会**剥离
+非 ASCII 文件名**，`ADB搞机助手_V1.1.0_安装包.exe` 会变成 `ADB._V1.1.0_.exe`，
+与 README、`VERSIONS.md` 和自动更新配置里写的名字全部对不上。
+
+脚本是幂等的：同名附件已存在时直接跳过，重跑不会重复占用带宽。
+
+### 关于 CI 与资源的差异
+
+`.gitignore` 排除了七个体积较大的 `resources/*` 子目录（scrcpy、platform-tools、
+drivers 等），CI 克隆后这些目录并不存在。因此：
+
+- 单元测试**不得**依赖真实 `resources/` 目录里的二进制文件，
+  需要时应自己造临时目录（参考 `tests/v20.5.8-mirror-session.test.js`）；
+- 涉及这些资源的审计需要真机或完整资源目录时才跑得动，属于本地验证范围。
 
 ---
 

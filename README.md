@@ -173,9 +173,12 @@
 
 ### 直接使用
 
-1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases) 下载 `ADB搞机助手_V1.1.0_安装包.exe`
+1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.1.0-Setup.exe`
 2. 双击安装（支持自选安装目录，会创建桌面与开始菜单快捷方式）
 3. 用数据线连接手机，打开 USB 调试，应用会自动识别
+
+> 安装包约 525 MB：里面已经带好 ADB/Fastboot 平台工具、scrcpy、常用驱动与固件模板，
+> 装完离线可用，不需要再联网下载任何组件。
 
 ### 从源码运行
 

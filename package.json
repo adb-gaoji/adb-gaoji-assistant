@@ -32,7 +32,8 @@
     "audit:wireless-pair": "node scripts/audit-wireless-pair.js",
     "audit:mirror-session": "node scripts/audit-mirror-session.js",
     "audit:themes": "node scripts/audit-themes.js",
-    "audit:contrast": "electron scripts/audit-contrast.js"
+    "audit:contrast": "electron scripts/audit-contrast.js",
+    "upload:release": "node scripts/upload-release.js"
   },
   "dependencies": {
     "@phosphor-icons/web": "2.1.2"
