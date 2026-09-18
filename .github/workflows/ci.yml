@@ -87,6 +87,7 @@ jobs:
           - audit:mirror-session
           - audit:themes
           - audit:contrast
+          - audit:links
 
     steps:
       - name: 检出代码
@@ -105,6 +106,7 @@ jobs:
       # task-flow（audit:tasks）的 P1 缺口不阻断，因此不列入本矩阵。
       # contrast（audit:contrast）跑在 Electron 里，用离屏窗口不弹窗；
       # 它需要 GPU 无关的样式计算，在 windows-latest 上可正常跑。
+      # links（audit:links）只校验仓库内相对链接与页内锚点，不联网。
       - name: 运行 ${{ matrix.audit }}
         shell: pwsh
         run: |

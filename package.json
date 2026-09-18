@@ -33,6 +33,7 @@
     "audit:mirror-session": "node scripts/audit-mirror-session.js",
     "audit:themes": "node scripts/audit-themes.js",
     "audit:contrast": "electron scripts/audit-contrast.js",
+    "audit:links": "node scripts/audit-links.js",
     "upload:release": "node scripts/upload-release.js"
   },
   "dependencies": {

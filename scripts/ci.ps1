@@ -8,7 +8,7 @@
     release.ps1 的第一步会调用本脚本，因此发布前不会漏跑校验。
 
 .PARAMETER SkipAudit
-    跳过审计脚本（7 个 audit:*），只跑语法检查与单元测试，用于快速迭代。
+    跳过审计脚本（10 个 audit:*），只跑语法检查与单元测试，用于快速迭代。
 
 .PARAMETER SkipResources
     跳过 resources/ 资源完整性校验（资源未就位时使用）。
@@ -175,7 +175,7 @@ if ($SkipAudit) {
   $audits = @(
     'audit:actions', 'audit:danger', 'audit:tasks', 'audit:ui-state',
     'audit:wireless-cast', 'audit:wireless-pair', 'audit:mirror-session',
-    'audit:themes', 'audit:contrast'
+    'audit:themes', 'audit:contrast', 'audit:links'
   )
   foreach ($audit in $audits) {
     # 审计脚本把“已知但未修的 P1”作为退出码 1 报出；这类缺口已在 ROADMAP 中登记，

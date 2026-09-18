@@ -4,19 +4,21 @@
 
 **Windows 桌面端 Android 维护工具箱**
 
-内置 adb / fastboot / scrcpy 与常用驱动、固件模板，覆盖设备诊断、Root 与面具、
-分区提取、固件刷机、应用管理、谷歌三件套、无线投屏与救砖修复。
+内置 adb / fastboot / scrcpy 与常用驱动、固件模板。**专治国产 ROM 上
+谷歌三件套装了不能用**——闪退、停用、重启失效一条流程修完；
+另覆盖设备诊断、Root 与面具、分区提取、固件刷机、应用管理、无线投屏与救砖修复。
 
 [![Version](https://img.shields.io/badge/version-1.1.0-blue?style=flat-square)](VERSIONS.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4?style=flat-square)](#环境要求)
 [![Electron](https://img.shields.io/badge/Electron-41.2.1-47848f?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![Node](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](#环境要求)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-54%20passed-brightgreen?style=flat-square)](#测试与质量保障)
-[![CI](https://img.shields.io/badge/CI-13%20checks-brightgreen?style=flat-square)](#测试与质量保障)
+[![Tests](https://img.shields.io/badge/tests-55%20passed-brightgreen?style=flat-square)](#测试与质量保障)
+[![CI](https://img.shields.io/badge/CI-14%20checks-brightgreen?style=flat-square)](#测试与质量保障)
 
-[功能特性](#功能特性) · [界面风格](#界面风格) · [快速开始](#快速开始) ·
-[架构说明](#架构说明) · [参与贡献](CONTRIBUTING.md) · [更新日志](CHANGELOG.md)
+[⭐ 谷歌三件套修复](#-主打功能谷歌三件套修复) · [为什么用它](#为什么用它) ·
+[一起做得更好](#一起把它做得更好) · [功能特性](#功能特性) · [界面风格](#界面风格) ·
+[快速开始](#快速开始) · [架构说明](#架构说明) · [参与贡献](CONTRIBUTING.md) · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -33,6 +35,185 @@
 
 > **本项目仅支持 Windows 10/11 x64。** 所有设备操作都需要你自行确认机型与
 > 系统版本的匹配性，详见[安全边界](#安全边界)。
+
+## ⭐ 主打功能：谷歌三件套修复
+
+> **国产 ROM 装上谷歌服务后最常见的三个毛病——点了闪退、用了就停、重启就失效——
+> 这个工具是专门为它们做的。**
+
+很多国产系统（摩托罗拉国行、联想、部分定制 ROM）自带谷歌服务开关但默认关闭，
+手动装上 GSF / Play 服务 / Play 商店之后往往仍然用不了。原因通常不是「包装错了」，
+而是**组件被系统冻结、后台策略被限制、或缺少开机自启的放行规则**。
+
+这个工具的「Google 服务修复中心」把整条链路做成了可点按钮：
+
+| 你遇到的现象 | 对应功能 | 实际做了什么 |
+|---|---|---|
+| 不知道装没装、装的对不对 | **深度诊断环境** | 逐个读取 GSF / Play 服务 / Play 商店的安装状态、启用状态、版本号与版本代码，并带上系统版本、SDK、CPU ABI，导出一份完整报告 |
+| 装完打不开、一点就闪退 | **一键安装 / 更新** | 按 **GSF → Play 服务 → Play 商店** 的正确顺序安装内置包，顺序由文件名智能排序，不需要自己判断先装哪个 |
+| Play 服务反复「已停止运行」 | **修复 Play 服务停止** | 重新启用三个组件 + `install-existing` 恢复被卸载的系统包 + 加入 Doze 白名单 + 放行 `RUN_IN_BACKGROUND` / `RUN_ANY_IN_BACKGROUND` 两条后台策略，最后清理主用户数据 |
+| 重启之后又失效了 | **修复重启后失效** | 在上一套放行基础上，把放行规则写进 Magisk 的 `service.d` 开机脚本（`99_adb_gaoji_gms.sh`），每次开机自动重新放行；无 Root 时自动降级为仅运行时放行，并明确告诉你降级了 |
+| 某个应用（游戏 / 银行 / 地图）提示需要谷歌服务 | **修复应用运行** | 把目标应用和三个谷歌组件一起加入放行名单，强制停止后重新拉起 |
+| 系统里有开关但找不到入口 | **打开谷歌服务开关** | 依次尝试摩托罗拉国行的 `GoogleSwitchActivity`、GSF 应用详情页、系统设置搜索页，命中哪个用哪个 |
+| 内置包版本太旧不合适 | **导入本地三件套** / **打开最新版下载** | 可以导入自己的 APK/APKS 走同一套流程；也可以直接打开三个组件的 APKMirror 官方分类页取最新版 |
+| 想彻底恢复干净 | **卸载谷歌三件套** | 从主用户（`--user 0`）卸载三个组件，带二次确认 |
+
+**和「装个谷歌安装器」的区别**：安装器只管把包推进去，装完能不能用要看系统给不给后台权限。
+这里把**安装、放行、白名单、开机自启、诊断**串成一条流程，并且每一步的原始输出都打进日志。
+
+<details>
+<summary><b>点开看具体执行了哪些命令</b></summary>
+
+放行一个组件时，会依次执行这五条：
+
+```bash
+pm enable --user 0 <包名>                                    # 解除冻结
+cmd package install-existing --user 0 <包名>                 # 恢复被卸掉的系统包
+cmd deviceidle whitelist +<包名>                             # 加入 Doze 省电白名单
+cmd appops set --user 0 <包名> RUN_IN_BACKGROUND allow       # 允许后台运行
+cmd appops set --user 0 <包名> RUN_ANY_IN_BACKGROUND allow   # 允许任意后台运行
+```
+
+三个组件的包名：
+
+| 组件 | 包名 |
+|---|---|
+| Google 服务框架（GSF） | `com.google.android.gsf` |
+| Google Play 服务 | `com.google.android.gms` |
+| Google Play 商店 | `com.android.vending` |
+
+「修复重启后失效」额外做的事：把上面 `pm enable` 与 `cmd deviceidle whitelist`
+两行写成 shell 脚本，push 到 `/data/local/tmp/`，再用 `su` 复制到
+`/data/adb/service.d/99_adb_gaoji_gms.sh` 并 `chmod 755`——Magisk 会在每次开机时执行它。
+
+**没有 Root 也能用**：`su` 失败时不会中断，会明确返回
+「当前无 Root 或 service.d 不可写，仅完成运行时放行」，你一眼就知道持久化那步没成。
+
+</details>
+
+> **注意**：清理主用户数据意味着 **Google 账号需要重新登录**；
+> 「修复 Play 服务停止」与「修复重启后失效」都包含这一步，执行前有二次确认。
+
+---
+
+## 为什么用它
+
+同类工具不少，下面这些是**能自己动手核实**的差异点，不是宣传语。
+
+### 一、装完即用，不联网
+
+`adb`、`fastboot`、`scrcpy 4.0`、安卓 USB 驱动、VC++ 运行时、Magisk、
+固件模板、谷歌三件套安装包——**893.7 MB 的运行时资源全部内置**。
+
+很多同类工具首次运行要联网下载平台工具或驱动，遇到网络问题、墙、
+或者给一台干净的机器装的时候就卡住。这个工具**离线可用**，
+修手机的场景经常就是「手上这台电脑不一定方便上网」。
+
+### 二、多设备不会刷错机器
+
+这是刷机工具最容易出人命的地方。本项目的做法是**结构性防御**，不是靠提示语：
+
+- 写入类动作**必须绑定目标设备序列号**，命令统一通过 `adbFor(payload, ...)`
+  注入 `-s SERIAL`，多设备同时连接时不会落到默认设备
+- **25 个危险动作**在 `actions.registry.js` 里集中登记，主进程会**拒绝**任何
+  缺少 `riskConfirmed` 标记的危险 IPC 请求——绕过界面直接调 IPC 也拦得住
+- `erase`（清除数据）**默认跳过**，只有显式选择"完整刷机"入口才执行
+- 固件刷机前有**兼容性门禁**：机型、分区表、固件包三者对不上就拦住
+
+> 有一条专门的审计脚本 `npm run audit:danger` 逐项检查这些边界，
+> 任何一次改动让它变红都过不了 CI。
+
+### 三、不是"点了没反应"，每步都有账可查
+
+- **任务中心**：长任务显示 `[任务进度] 当前/总数`，运行期间阻止重复扫描
+- **操作历史**：写入 `action-history.jsonl`，可回查做过什么
+- **完整日志**：一键复制或导出，包含每条 ADB/Fastboot 命令的原始输出
+- **失败不静默**：失败路径返回具体错误与设备输出，不会假装成功
+
+很多刷机工具点完只给你一个转圈或者"完成"，出问题无从下手。这里失败时
+你能看到**是哪条命令、返回了什么**。
+
+### 四、工程上真的在管质量
+
+| 指标 | 实际情况 |
+|---|---|
+| 单元与契约测试 | **55 项全绿**（12 个测试文件）|
+| 自动化审计 | **10 个独立审计脚本**，覆盖动作契约、危险边界、任务流、UI 状态、无线投屏、无线配对、投屏会话、主题、对比度、文档链接 |
+| CI 检查 | **14 项**，GitHub Actions 每次推送自动跑 |
+| 语法门禁 | 10 个核心源文件逐个 `node --check` |
+| 依赖安全 | 生产依赖 **0 漏洞**（仅 1 个 MIT 许可依赖）|
+| 对比度 | 6 套主题 × 6 处文字，用**真实渲染**测 WCAG 对比度，不达标即失败 |
+
+审计脚本用**退出码表达严重程度**（`2` = P0 必修、`1` = 已登记的 P1 缺口、`0` = 通过），
+所以 CI 不会把"已知缺口"和"新引入的 bug"混为一谈。
+
+### 五、界面可换，功能不缩水
+
+**6 套界面风格**共用同一组 CSS 变量，只改配色，**布局与功能零改动**。
+新增主题必须通过 `npm run audit:contrast`——它会用真实渲染测量
+6 处文字在每套主题下的对比度，达不到 4.5 就报错。
+
+### 六、离线资源不进 Git，克隆很轻
+
+`.gitignore` 排除了 7 个大体积资源目录，仓库**只有 86 个文件、约 2.1 MB**。
+克隆很快，改代码的人不会被 893 MB 的二进制拖累。
+
+（首次从源码运行需要补齐 `resources/`，见 [`resources/MANIFEST.md`](resources/MANIFEST.md)，
+用 `pwsh scripts/verify-resources.ps1` 校验。）
+
+### 七、开源、可改、欢迎接手
+
+MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个动作每个都能追到实现。
+
+**想让更多人一起升级优化**是这个项目开源的直接目的——
+下面的[一起把它做得更好](#一起把它做得更好)列出了具体能上手的地方，
+从写一行文案到加一套主题都有。有任何想法，[开个 Issue](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/new/choose)
+或者直接提 PR 都行。
+## 一起把它做得更好
+
+**不需要会写代码也能帮上忙。** 下面这些 Issue 已经开好，可以直接认领。
+
+| 任务 | 难度 | 需要写代码 |
+|---|---|---|
+| [#2 新增第 7 套界面风格](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/2) | ⭐⭐ | 会 CSS 就行 |
+| [#8 完善中文文案准确性](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/8) | ⭐ | 不需要 |
+| [#3 机型实测汇总](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/3) | ⭐ | 不需要 |
+| [#6 操作历史界面化](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/6) | ⭐⭐ | 会前端 |
+| [#7 审计脚本去重](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/7) | ⭐⭐ | 会 Node |
+| [#1 拆分 renderer.js](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/1) | ⭐⭐⭐ | **收益最大** |
+| [#4 统一动作分发](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/4) | ⭐⭐⭐ | 需要读代码 |
+| [#5 任务取消](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/5) | ⭐⭐⭐ | 有一定难度 |
+
+**这些任务都不碰手机写入**，改坏了 CI 会立刻告诉你。
+完整的 11 个任务（含更多文档与工程类）见 [docs/good-first-issues.md](docs/good-first-issues.md)。
+
+### 不写代码也能贡献
+
+| 你能做什么 | 去哪 |
+|---|---|
+| 报告 bug | [Bug 反馈](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/new?template=bug_report.yml) |
+| **反馈机型适配** | [机型实测反馈](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/new?template=device_report.yml)——**失败的记录同样有价值** |
+| 提功能建议 | [功能建议](https://github.com/adb-gaoji/adb-gaoji-assistant/issues/new?template=feature_request.yml) |
+| 提问 / 求助 | [Q&A 板块](https://github.com/adb-gaoji/adb-gaoji-assistant/discussions/categories/q-a) |
+| 机型互助 | [机型实测汇总帖](https://github.com/adb-gaoji/adb-gaoji-assistant/discussions/11) |
+| 分享经验 | [General / Show and tell](https://github.com/adb-gaoji/adb-gaoji-assistant/discussions) |
+
+> **第一次提 PR？** 直接说就行，维护者会手把手带。
+> 在[「想参与开发？从这里开始」](https://github.com/adb-gaoji/adb-gaoji-assistant/discussions/12)
+> 里回一句你的背景（会前端 / 会 Node / 完全没写过），会帮你挑一个最合适的。
+
+### 我们希望这个项目变成什么样
+
+刷机工具圈子里，很多好用的工具最后都停在某个版本不再更新。
+这个项目开源，就是想让它**能被接手、能持续活下去**——
+
+- **代码不加密不混淆**，110 个动作每个都能追到实现
+- **每个改动都有测试兜底**，新人改了不怕改坏
+- **审计脚本告诉你哪里还有坑**，不用猜
+- **文档写清楚为什么这么做**，不只是写「怎么做」
+
+如果你也遇到过「找不到一个还在维护的刷机工具」，
+欢迎一起来把它做成那个例外。
 
 ## 功能特性
 
@@ -80,6 +261,16 @@
 - DenyList 配置（批量加入已装应用）
 - 一键安装 Magisk
 - Root 分区一键备份
+
+### ⭐ 谷歌三件套（GMS）
+- **深度诊断**：三组件安装 / 启用 / 版本 + 系统与 ABI 报告
+- **一键安装**：按 GSF → Play 服务 → Play 商店顺序
+- **修复闪退停用**：启用 + `install-existing` + 后台策略放行
+- **修复重启失效**：写入 Magisk `service.d` 开机自启脚本
+- **修复指定应用**：目标应用连同三组件一起放行并重启
+- **打开谷歌服务开关**：自动匹配机型可用入口
+- 内置包准备、本地 APK 导入、最新版下载
+- 仅运行时放行（无 Root 自动降级）
 
 ### 🧩 分区与镜像
 - 关键分区备份（boot / vbmeta / dtbo 等）
@@ -251,7 +442,7 @@ npm test         # 语法检查 + 54 项单元/契约测试
 npm run ci       # 完整 CI：语法 → 测试 → 依赖审计 → 9 项审计 → 资源校验
 ```
 
-CI 共 **13 项检查**。除单元测试外，还有一组**后台审计脚本**，
+CI 共 **14 项检查**。除单元测试外，还有一组**后台审计脚本**，
 不启动 Electron 窗口即可校验跨层契约：
 
 | 审计 | 校验内容 |
@@ -265,6 +456,7 @@ CI 共 **13 项检查**。除单元测试外，还有一组**后台审计脚本*
 | `audit:mirror-session` | 投屏会话生命周期 |
 | `audit:themes` | 6 套主题的 CSS 变量是否完整 |
 | `audit:contrast` | 真实渲染下测量 6 套主题 × 6 处文字的 WCAG 对比度 |
+| `audit:links` | 文档里的相对链接与页内锚点是否有效（防死链） |
 
 审计脚本用退出码表达严重度：
 
@@ -305,7 +497,7 @@ scripts/
   ci.ps1                  完整 CI
   release.ps1             发布流程
   verify-resources.ps1    资源完整性校验
-  audit-*.js              9 项契约审计
+  audit-*.js              10 项契约审计
 tests/                    单元与契约测试（54 项）
 design/                   界面风格定义、对比页、应用截图
 resources/                运行时资源（不纳入版本控制，见下）
@@ -461,9 +653,11 @@ Android 11+ 需要**配对码**流程，注意区分两个端口：
 | 文档 | 内容 |
 |---|---|
 | [`VERSIONS.md`](VERSIONS.md) | **面向用户的版本升级说明**，逐版本记录改了什么 |
+| [`docs/good-first-issues.md`](docs/good-first-issues.md) | **11 个适合上手的任务**，含难度分级与完成标准 |
+| [`SUPPORT.md`](SUPPORT.md) | 遇到问题先看这里：排查步骤与提问模板 |
+| [`ROADMAP.md`](ROADMAP.md) | 开发计划、优先级、已登记的 P1 缺口 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 贡献指南、代码规范、危险操作要求、发布流程 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 开发明细，含 20.x 内部迭代系列 |
-| [`ROADMAP.md`](ROADMAP.md) | 开发计划、已登记的 P1 缺口 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 贡献指南、代码规范、危险操作要求 |
 | [`SECURITY.md`](SECURITY.md) | 安全策略、信任边界与漏洞反馈流程 |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | 社区行为准则 |
 | [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) | 第三方组件许可声明 |

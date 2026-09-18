@@ -1,11 +1,17 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 新手任务清单（想参与开发看这里）
+    url: https://github.com/adb-gaoji/adb-gaoji-assistant/blob/main/docs/good-first-issues.md
+    about: 11 个适合上手的任务，从加一套主题到拆 renderer.js，都不碰手机写入
+  - name: 遇到问题先看这里
+    url: https://github.com/adb-gaoji/adb-gaoji-assistant/blob/main/SUPPORT.md
+    about: 安装、连不上设备、功能异常的排查步骤，以及怎么提问能被快速答复
   - name: 安全漏洞
     url: https://github.com/adb-gaoji/adb-gaoji-assistant/security/advisories/new
     about: 请勿公开提交安全漏洞，改用私密漏洞报告（详见 SECURITY.md）
   - name: 使用问题与讨论
     url: https://github.com/adb-gaoji/adb-gaoji-assistant/discussions
-    about: 不确定是不是缺陷、或想讨论用法，请到 Discussions
+    about: 不确定是不是缺陷、想讨论用法、或者想问从哪开始参与，请到 Discussions
   - name: 贡献指南
     url: https://github.com/adb-gaoji/adb-gaoji-assistant/blob/main/CONTRIBUTING.md
     about: 提交代码前请先阅读贡献指南，特别是危险操作的相关要求
