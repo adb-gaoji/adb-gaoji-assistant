@@ -1,0 +1,36 @@
+# ---------- 依赖与构建产物 ----------
+node_modules/
+dist/
+out/
+release/
+*.log
+npm-debug.log*
+
+# ---------- 运行时输出（程序在桌面生成的产物） ----------
+ADB搞机助手输出/
+ADB搞机助手-刷机包/
+
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 大体积二进制资源（合计约 1.37 GB，不入库） ----------
+# 这些是随安装包分发的运行时资源，体积过大不适合纳入版本控制。
+# 清单、来源与校验值见 resources/MANIFEST.md。
+resources/tea-templates/
+resources/gms/
+resources/bundled-tools/
+resources/scrcpy/
+resources/drivers/
+resources/apk/
+resources/platform-tools/
+
+# ---------- 临时/备份 ----------
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+.vscode/
+.idea/

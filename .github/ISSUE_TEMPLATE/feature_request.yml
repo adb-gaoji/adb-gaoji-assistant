@@ -1,0 +1,91 @@
+name: 功能建议
+description: 提出一个新功能或改进想法
+title: '[建议] '
+labels: ['enhancement', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你的想法。提交前请先搜索现有 Issue 和
+        [ROADMAP.md](../blob/main/ROADMAP.md)，避免重复。
+
+        如果你的建议**涉及设备写入**（刷机、解锁、清数据、写分区），
+        请务必说明安全边界。参见 [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md)。
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: 建议类型
+      options:
+        - 新增功能
+        - 改进现有功能
+        - 界面与体验
+        - 性能优化
+        - 文档改进
+        - 新增界面风格
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到了什么问题？
+      description: 描述痛点，而不是直接说方案 —— 这样我们能找到更好的解法
+      placeholder: |
+        每次刷机前我都要手动记下当前槽位，刷完再手动切回去，很麻烦。
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 你希望怎么解决？
+      placeholder: |
+        希望在固件刷机页面显示当前槽位，并提供「刷完自动切回原槽位」的选项。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过其他方案吗？
+      description: 有的话说说为什么不用它们
+    validations:
+      required: false
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: 这个功能会写入设备吗？
+      description: 涉及写分区的建议需要更谨慎的设计
+      options:
+        - 不会，只读取信息
+        - 会修改设备状态，但不写分区
+        - 会写入分区或有不可恢复的后果
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk-detail
+    attributes:
+      label: 如果会写入设备，请说明安全边界
+      description: 默认是否安全？需要什么前置确认？失败时如何处理？
+      placeholder: |
+        该功能会修改活动槽位。设计上：
+        - 默认不勾选，用户必须显式开启
+        - 操作前显示目标槽位并要求二次确认
+        - 同一次操作只允许切换一次，避免来回刷
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索过现有 Issue 与 ROADMAP，没有重复
+          required: true
+        - label: 我愿意参与实现这个功能
+          required: false

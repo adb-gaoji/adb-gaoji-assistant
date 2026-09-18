@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>ADB搞机助手 · 界面风格方案</title>
+<link rel="stylesheet" href="../node_modules/@phosphor-icons/web/src/regular/style.css" />
+<style>
+  /* ============================================================
+     5 套配色方案预览
+     每套只是同一组 CSS 变量的不同取值，应用到主程序只需切换 data-theme。
+     ============================================================ */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    padding: 28px;
+  }
+
+  .head { max-width: 1680px; margin: 0 auto 24px; }
+  .head h1 { font-size: 20px; font-weight: 650; margin-bottom: 6px; }
+  .head p { font-size: 13px; color: #8b949e; line-height: 1.7; }
+
+  .grid {
+    max-width: 1680px; margin: 0 auto;
+    display: grid; gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+  }
+
+  /* ---------- 每个方案的外壳 ---------- */
+  .scheme { border-radius: 14px; overflow: hidden; border: 1px solid #21262d; }
+  .scheme-head {
+    padding: 12px 16px; font-size: 13px; display: flex; align-items: center; gap: 10px;
+    background: #161b22; border-bottom: 1px solid #21262d;
+  }
+  .scheme-head .idx {
+    width: 21px; height: 21px; border-radius: 6px; display: grid; place-items: center;
+    font-size: 11px; font-weight: 700; background: #21262d; color: #8b949e;
+  }
+  .scheme-head .name { font-weight: 600; }
+  .scheme-head .tag {
+    margin-left: auto; font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    background: #21262d; color: #8b949e;
+  }
+  .scheme-desc { padding: 10px 16px; font-size: 12px; color: #8b949e; background: #0d1117; line-height: 1.6; }
+
+  /* ---------- 预览区域：用该方案的变量渲染真实组件 ---------- */
+  .mock {
+    display: grid; grid-template-columns: 186px minmax(0, 1fr);
+    height: 342px; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-size: 12px;
+  }
+
+  .mock-side {
+    background: var(--sidebar); padding: 14px 11px;
+    display: flex; flex-direction: column; gap: 3px;
+    border-right: 1px solid var(--line);
+  }
+  .mock-brand { display: flex; align-items: center; gap: 9px; padding: 5px 8px 16px; }
+  .mock-brand .dot {
+    width: 27px; height: 27px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--accent); color: var(--accent-on, #fff); font-size: 15px;
+  }
+  .mock-brand b { font-size: 13px; color: var(--sidebar-text, #fff); font-weight: 650; }
+  .mock-brand span { display: block; font-size: 10px; color: var(--sidebar-muted, rgba(255,255,255,.5)); margin-top: 1px; }
+
+  .mock-nav {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 7px; color: var(--sidebar-muted, rgba(255,255,255,.72));
+    transition: background 140ms, color 140ms;
+  }
+  .mock-nav i { font-size: 15px; }
+  .mock-nav.active {
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-active-text, #fff);
+    font-weight: 620;
+    box-shadow: inset 2.5px 0 0 var(--accent);
+  }
+  .mock-nav.sec { margin-top: 9px; font-size: 10px; color: var(--sidebar-muted); opacity: .6; padding: 4px 10px; }
+
+  .mock-main { padding: 18px; overflow: hidden; display: flex; flex-direction: column; gap: 13px; }
+
+  .mock-title { display: flex; align-items: center; gap: 9px; }
+  .mock-title h2 { font-size: 16px; font-weight: 650; }
+  .mock-title .pill {
+    margin-left: auto; font-size: 10px; padding: 3px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  }
+
+  .card {
+    background: var(--surface-raised); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 13px 14px;
+    box-shadow: var(--shadow);
+  }
+  .card.hero {
+    display: flex; align-items: center; gap: 13px;
+    background: var(--hero-bg, var(--surface-raised));
+    border-color: var(--hero-line, var(--line));
+  }
+  .card.hero .avatar {
+    width: 46px; height: 46px; flex: 0 0 46px; border-radius: var(--radius);
+    display: grid; place-items: center; font-size: 23px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .card.hero .who { min-width: 0; flex: 1; }
+  .card.hero .who b { font-size: 15px; font-weight: 650; display: block; }
+  .card.hero .who span { font-size: 11px; color: var(--text-secondary); }
+  .badge {
+    font-size: 10px; padding: 3px 8px; border-radius: 6px; font-weight: 600;
+    background: var(--success-soft, var(--accent-soft)); color: var(--success, var(--accent));
+  }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 10px 12px;
+  }
+  .stat .k { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+  .stat .v { font-size: 15px; font-weight: 650; letter-spacing: -.2px; }
+  .stat .v.accent { color: var(--accent); }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    font-size: 11.5px; padding: 7px 14px; border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--line-strong); background: var(--surface-raised);
+    color: var(--text); font-weight: 550; cursor: default;
+  }
+  .btn.primary {
+    background: var(--accent); color: var(--accent-on, #fff);
+    border-color: var(--accent); font-weight: 600;
+  }
+  .btn.ghost { background: transparent; }
+  .btn.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+
+  .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11.5px; }
+  .table th {
+    text-align: left; font-weight: 600; font-size: 10.5px;
+    color: var(--text-muted); padding: 6px 9px;
+    background: var(--surface-subtle); border-bottom: 1px solid var(--line);
+  }
+  .table th:first-child { border-radius: var(--radius-sm, 6px) 0 0 0; }
+  .table th:last-child { border-radius: 0 var(--radius-sm, 6px) 0 0; }
+  .table td { padding: 7px 9px; border-bottom: 1px solid var(--line); }
+  .table tr:last-child td { border-bottom: 0; }
+  .table .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 10.5px; color: var(--text-secondary); }
+
+  /* ============================================================
+     方案 1 · 深空石墨（当前的深色，作为基准）
+     ============================================================ */
+  .s1 {
+    --bg: #11171c; --surface: #171e24; --surface-raised: #1e272e; --surface-subtle: #192229;
+    --sidebar: #0c1216; --sidebar-text: #edf1f3; --sidebar-muted: rgba(237,241,243,.62);
+    --sidebar-active-bg: rgba(85,197,165,.15); --sidebar-active-text: #fff;
+    --text: #edf1f3; --text-secondary: #bdc6ce; --text-muted: #929da7;
+    --line: #343b42; --line-strong: #4a535b;
+    --accent: #55c5a5; --accent-soft: #173f35; --accent-on: #06231c;
+    --danger: #ff8c84; --danger-soft: #4a2425;
+    --success: #63c7a4; --success-soft: #173f35;
+    --radius: 8px; --radius-sm: 6px;
+    --shadow: 0 10px 28px rgba(0,0,0,.24);
+  }
+
+  /* ============================================================
+     方案 2 · 午夜靛蓝：深海军蓝底 + 靛蓝强调，冷冽克制
+     ============================================================ */
+  .s2 {
+    --bg: #0b1020; --surface: #101731; --surface-raised: #151e3d; --surface-subtle: #0e1530;
+    --sidebar: #070b18; --sidebar-text: #eef2ff; --sidebar-muted: rgba(238,242,255,.58);
+    --sidebar-active-bg: linear-gradient(90deg, rgba(99,102,241,.26), rgba(99,102,241,.05));
+    --sidebar-active-text: #fff;
+    --text: #eef2ff; --text-secondary: #a9b4d8; --text-muted: #7b88b4;
+    --line: #232d54; --line-strong: #35426f;
+    --accent: #7c8cff; --accent-soft: #1b2350; --accent-on: #080d20;
+    --danger: #ff8098; --danger-soft: #3d1b2c;
+    --success: #5fd0b0; --success-soft: #10352e;
+    --radius: 10px; --radius-sm: 7px;
+    --shadow: 0 12px 32px rgba(0,0,0,.42);
+    --hero-bg: linear-gradient(135deg, #182352, #131b3c);
+    --hero-line: #2c3a6e;
+  }
+
+  /* ============================================================
+     方案 3 · 暖云米白：浅色高级感，米白纸面 + 琥珀点睛
+     ============================================================ */
+  .s3 {
+    --bg: #f6f3ee; --surface: #faf8f4; --surface-raised: #ffffff; --surface-subtle: #f3efe8;
+    --sidebar: #2a2521; --sidebar-text: #f7f3ec; --sidebar-muted: rgba(247,243,236,.56);
+    --sidebar-active-bg: rgba(217,119,6,.17); --sidebar-active-text: #fff;
+    --text: #241f1a; --text-secondary: #5d554b; --text-muted: #8b8175;
+    --line: #e5ded3; --line-strong: #d3c9ba;
+    --accent: #b45309; --accent-soft: #fdf0dd; --accent-on: #fff;
+    --danger: #b3261e; --danger-soft: #fdeceb;
+    --success: #15803d; --success-soft: #e7f6ec;
+    --radius: 9px; --radius-sm: 6px;
+    --shadow: 0 8px 26px rgba(74,60,40,.09);
+    --hero-bg: linear-gradient(135deg, #fffdf9, #fdf6ea);
+    --hero-line: #ecdfc9;
+  }
+
+  /* ============================================================
+     方案 4 · 墨玉青瓷：中式高级灰绿，低饱和 + 玉色强调
+     ============================================================ */
+  .s4 {
+    --bg: #eef2f0; --surface: #f4f7f5; --surface-raised: #ffffff; --surface-subtle: #e9efec;
+    --sidebar: #1c2b28; --sidebar-text: #eef4f1; --sidebar-muted: rgba(238,244,241,.55);
+    --sidebar-active-bg: rgba(45,138,116,.2); --sidebar-active-text: #fff;
+    --text: #16241f; --text-secondary: #4a5c56; --text-muted: #74857f;
+    --line: #d8e2dd; --line-strong: #bccbc4;
+    --accent: #2d8a74; --accent-soft: #dff2ec; --accent-on: #fff;
+    --danger: #b02a26; --danger-soft: #fcebe9;
+    --success: #2d8a74; --success-soft: #dff2ec;
+    --radius: 7px; --radius-sm: 5px;
+    --shadow: 0 6px 22px rgba(22,44,38,.08);
+    --hero-bg: linear-gradient(135deg, #ffffff, #eef7f3);
+    --hero-line: #cfe6dd;
+  }
+
+  /* ============================================================
+     方案 5 · 曜石霓虹：纯黑 + 青紫双色渐变，科技感最强
+     ============================================================ */
+  .s5 {
+    --bg: #08080c; --surface: #0e0e14; --surface-raised: #14141d; --surface-subtle: #101018;
+    --sidebar: #050508; --sidebar-text: #f0f0f5; --sidebar-muted: rgba(240,240,245,.5);
+    --sidebar-active-bg: linear-gradient(90deg, rgba(34,211,238,.22), rgba(168,85,247,.12));
+    --sidebar-active-text: #fff;
+    --text: #f0f0f5; --text-secondary: #a5a5b8; --text-muted: #74748c;
+    --line: #22222e; --line-strong: #34344a;
+    --accent: #22d3ee; --accent-soft: #0d3a44; --accent-on: #04191d;
+    --danger: #ff6b81; --danger-soft: #3a1520;
+    --success: #34d399; --success-soft: #0b3a2c;
+    --radius: 11px; --radius-sm: 8px;
+    --shadow: 0 14px 38px rgba(0,0,0,.6);
+    --hero-bg: linear-gradient(135deg, #101826, #16102a);
+    --hero-line: #2b2b45;
+  }
+
+  /* 各方案的强调色补充 */
+  .s1 .mock-brand .dot { color: #06231c; }
+  .s5 .mock-nav.active i { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>ADB搞机助手 · 界面风格方案（5 选 1）</h1>
+  <p>
+    每套方案只改同一组 CSS 变量，功能结构完全不变，切换成本极低。<br />
+    选定后把对应变量写进 <code>src/styles.css</code> 的 <code>:root[data-theme="…"]</code> 即可，
+    并可在设置里提供主题下拉，而不是现在的「浅色/深色」二选一。
+  </p>
+</div>
+
+<div class="grid">
+
+  <!-- ============ 1 ============ -->
+  <div class="scheme">
+    <div class="scheme-head"><span class="idx">1</span><span class="name">深空石墨</span><span class="tag">当前深色 · 基准</span></div>
+    <div class="scheme-desc">现有深色主题。中性石墨灰底 + 薄荷绿强调，平衡耐看，长时间使用不刺眼。</div>
+    <div class="mock s1">
+      <div class="mock-side">
+        <div class="mock-brand"><span class="dot"><i class="ph ph-device-mobile"></i></span><div><b>搞机助手</b><span>V1.0.0</span></div></div>
+        <div class="mock-nav active"><i class="ph ph-house"></i>设备总览</div>
+        <div class="mock-nav"><i class="ph ph-shield-check"></i>Root 工具</div>
+        <div class="mock-nav"><i class="ph ph-hard-drives"></i>分区提取</div>
+        <div class="mock-nav sec">系统</div>
+        <div class="mock-nav"><i class="ph ph-android-logo"></i>应用管理</div>
+        <div class="mock-nav"><i class="ph ph-google-logo"></i>谷歌服务</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-title"><h2>当前设备</h2><span class="pill">已连接</span></div>
+        <div class="card hero">
+          <span class="avatar"><i class="ph ph-device-mobile"></i></span>
+          <div class="who"><b>XT2335-3</b><span>Motorola · Android 14</span></div>
+          <span class="badge">已 Root</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">电池</div><div class="v accent">82%</div></div>
+          <div class="stat"><div class="k">存储</div><div class="v">128 GB</div></div>
+          <div class="stat"><div class="k">已用</div><div class="v">64%</div></div>
+        </div>
+        <div class="actions">
+          <span class="btn primary">一键诊断</span><span class="btn">刷新</span><span class="btn danger">清除数据</span>
+        </div>
+        <table class="table">
+          <tr><th>分区</th><th>大小</th><th>状态</th></tr>
+          <tr><td class="mono">boot_a</td><td class="mono">96 MB</td><td>已备份</td></tr>
+          <tr><td class="mono">init_boot</td><td class="mono">96 MB</td><td>未备份</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 2 ============ -->
+  <div class="scheme">
+    <div class="scheme-head"><span class="idx">2</span><span class="name">午夜靛蓝</span><span class="tag">冷冽克制</span></div>
+    <div class="scheme-desc">深海军蓝底 + 靛蓝强调，圆角更大。参照专业开发工具的克制感，最"贵"的一套深色。</div>
+    <div class="mock s2">
+      <div class="mock-side">
+        <div class="mock-brand"><span class="dot"><i class="ph ph-device-mobile"></i></span><div><b>搞机助手</b><span>V1.0.0</span></div></div>
+        <div class="mock-nav active"><i class="ph ph-house"></i>设备总览</div>
+        <div class="mock-nav"><i class="ph ph-shield-check"></i>Root 工具</div>
+        <div class="mock-nav"><i class="ph ph-hard-drives"></i>分区提取</div>
+        <div class="mock-nav sec">系统</div>
+        <div class="mock-nav"><i class="ph ph-android-logo"></i>应用管理</div>
+        <div class="mock-nav"><i class="ph ph-google-logo"></i>谷歌服务</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-title"><h2>当前设备</h2><span class="pill">已连接</span></div>
+        <div class="card hero">
+          <span class="avatar"><i class="ph ph-device-mobile"></i></span>
+          <div class="who"><b>XT2335-3</b><span>Motorola · Android 14</span></div>
+          <span class="badge">已 Root</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">电池</div><div class="v accent">82%</div></div>
+          <div class="stat"><div class="k">存储</div><div class="v">128 GB</div></div>
+          <div class="stat"><div class="k">已用</div><div class="v">64%</div></div>
+        </div>
+        <div class="actions">
+          <span class="btn primary">一键诊断</span><span class="btn">刷新</span><span class="btn danger">清除数据</span>
+        </div>
+        <table class="table">
+          <tr><th>分区</th><th>大小</th><th>状态</th></tr>
+          <tr><td class="mono">boot_a</td><td class="mono">96 MB</td><td>已备份</td></tr>
+          <tr><td class="mono">init_boot</td><td class="mono">96 MB</td><td>未备份</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 3 ============ -->
+  <div class="scheme">
+    <div class="scheme-head"><span class="idx">3</span><span class="name">暖云米白</span><span class="tag">浅色高级感</span></div>
+    <div class="scheme-desc">米白纸面 + 深棕侧栏 + 琥珀点睛。适合白天使用，纸质感强，不像普通"白底蓝按钮"。</div>
+    <div class="mock s3">
+      <div class="mock-side">
+        <div class="mock-brand"><span class="dot"><i class="ph ph-device-mobile"></i></span><div><b>搞机助手</b><span>V1.0.0</span></div></div>
+        <div class="mock-nav active"><i class="ph ph-house"></i>设备总览</div>
+        <div class="mock-nav"><i class="ph ph-shield-check"></i>Root 工具</div>
+        <div class="mock-nav"><i class="ph ph-hard-drives"></i>分区提取</div>
+        <div class="mock-nav sec">系统</div>
+        <div class="mock-nav"><i class="ph ph-android-logo"></i>应用管理</div>
+        <div class="mock-nav"><i class="ph ph-google-logo"></i>谷歌服务</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-title"><h2>当前设备</h2><span class="pill">已连接</span></div>
+        <div class="card hero">
+          <span class="avatar"><i class="ph ph-device-mobile"></i></span>
+          <div class="who"><b>XT2335-3</b><span>Motorola · Android 14</span></div>
+          <span class="badge">已 Root</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">电池</div><div class="v accent">82%</div></div>
+          <div class="stat"><div class="k">存储</div><div class="v">128 GB</div></div>
+          <div class="stat"><div class="k">已用</div><div class="v">64%</div></div>
+        </div>
+        <div class="actions">
+          <span class="btn primary">一键诊断</span><span class="btn">刷新</span><span class="btn danger">清除数据</span>
+        </div>
+        <table class="table">
+          <tr><th>分区</th><th>大小</th><th>状态</th></tr>
+          <tr><td class="mono">boot_a</td><td class="mono">96 MB</td><td>已备份</td></tr>
+          <tr><td class="mono">init_boot</td><td class="mono">96 MB</td><td>未备份</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4 ============ -->
+  <div class="scheme">
+    <div class="scheme-head"><span class="idx">4</span><span class="name">墨玉青瓷</span><span class="tag">中式雅致</span></div>
+    <div class="scheme-desc">低饱和灰绿 + 玉色强调，圆角最小。安静稳重，接近国产专业工具的设计语言。</div>
+    <div class="mock s4">
+      <div class="mock-side">
+        <div class="mock-brand"><span class="dot"><i class="ph ph-device-mobile"></i></span><div><b>搞机助手</b><span>V1.0.0</span></div></div>
+        <div class="mock-nav active"><i class="ph ph-house"></i>设备总览</div>
+        <div class="mock-nav"><i class="ph ph-shield-check"></i>Root 工具</div>
+        <div class="mock-nav"><i class="ph ph-hard-drives"></i>分区提取</div>
+        <div class="mock-nav sec">系统</div>
+        <div class="mock-nav"><i class="ph ph-android-logo"></i>应用管理</div>
+        <div class="mock-nav"><i class="ph ph-google-logo"></i>谷歌服务</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-title"><h2>当前设备</h2><span class="pill">已连接</span></div>
+        <div class="card hero">
+          <span class="avatar"><i class="ph ph-device-mobile"></i></span>
+          <div class="who"><b>XT2335-3</b><span>Motorola · Android 14</span></div>
+          <span class="badge">已 Root</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">电池</div><div class="v accent">82%</div></div>
+          <div class="stat"><div class="k">存储</div><div class="v">128 GB</div></div>
+          <div class="stat"><div class="k">已用</div><div class="v">64%</div></div>
+        </div>
+        <div class="actions">
+          <span class="btn primary">一键诊断</span><span class="btn">刷新</span><span class="btn danger">清除数据</span>
+        </div>
+        <table class="table">
+          <tr><th>分区</th><th>大小</th><th>状态</th></tr>
+          <tr><td class="mono">boot_a</td><td class="mono">96 MB</td><td>已备份</td></tr>
+          <tr><td class="mono">init_boot</td><td class="mono">96 MB</td><td>未备份</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 5 ============ -->
+  <div class="scheme">
+    <div class="scheme-head"><span class="idx">5</span><span class="name">曜石霓虹</span><span class="tag">科技感最强</span></div>
+    <div class="scheme-desc">纯黑底 + 青色强调 + 紫蓝渐变侧栏，圆角最大。视觉冲击最强，适合强调"工具感"。</div>
+    <div class="mock s5">
+      <div class="mock-side">
+        <div class="mock-brand"><span class="dot"><i class="ph ph-device-mobile"></i></span><div><b>搞机助手</b><span>V1.0.0</span></div></div>
+        <div class="mock-nav active"><i class="ph ph-house"></i>设备总览</div>
+        <div class="mock-nav"><i class="ph ph-shield-check"></i>Root 工具</div>
+        <div class="mock-nav"><i class="ph ph-hard-drives"></i>分区提取</div>
+        <div class="mock-nav sec">系统</div>
+        <div class="mock-nav"><i class="ph ph-android-logo"></i>应用管理</div>
+        <div class="mock-nav"><i class="ph ph-google-logo"></i>谷歌服务</div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-title"><h2>当前设备</h2><span class="pill">已连接</span></div>
+        <div class="card hero">
+          <span class="avatar"><i class="ph ph-device-mobile"></i></span>
+          <div class="who"><b>XT2335-3</b><span>Motorola · Android 14</span></div>
+          <span class="badge">已 Root</span>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">电池</div><div class="v accent">82%</div></div>
+          <div class="stat"><div class="k">存储</div><div class="v">128 GB</div></div>
+          <div class="stat"><div class="k">已用</div><div class="v">64%</div></div>
+        </div>
+        <div class="actions">
+          <span class="btn primary">一键诊断</span><span class="btn">刷新</span><span class="btn danger">清除数据</span>
+        </div>
+        <table class="table">
+          <tr><th>分区</th><th>大小</th><th>状态</th></tr>
+          <tr><td class="mono">boot_a</td><td class="mono">96 MB</td><td>已备份</td></tr>
+          <tr><td class="mono">init_boot</td><td class="mono">96 MB</td><td>未备份</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

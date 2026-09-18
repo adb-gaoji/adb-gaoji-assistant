@@ -1,0 +1,113 @@
+name: 机型实测反馈
+description: 反馈某个机型的实际测试结果，帮助完善兼容性列表
+title: '[实测] '
+labels: ['device-report']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这类反馈对刷机功能**最有价值**。
+
+        一条具体的机型实测记录，比十句「好用」更能帮到后来的用户。
+        无论成功还是失败都欢迎——**失败的记录同样重要**。
+
+        > 请注意：这里只需要说明**功能是否正常工作**，
+        > 不需要提供固件文件或设备序列号。
+
+  - type: input
+    id: brand
+    attributes:
+      label: 品牌
+      placeholder: '小米 / 红米 / 摩托罗拉 / 联想 / 三星 / 一加 …'
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: 机型
+      placeholder: 'Redmi K60 Pro'
+    validations:
+      required: true
+
+  - type: input
+    id: android
+    attributes:
+      label: Android 版本与系统
+      placeholder: 'Android 14 / HyperOS 1.0.5'
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      placeholder: 'ADB搞机助手 V1.1.0'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: features
+    attributes:
+      label: 哪些功能实测可用？
+      description: 只勾选你**实际验证过**的，没试过的不要勾
+      options:
+        - label: 设备识别与连接（USB）
+          required: false
+        - label: 无线 ADB 连接 / 配对
+          required: false
+        - label: 设备报告与诊断
+          required: false
+        - label: 应用管理（列表 / 导出 / 卸载 / 冻结）
+          required: false
+        - label: 存储清理
+          required: false
+        - label: Root 检测与 Magisk
+          required: false
+        - label: 分区备份与提取
+          required: false
+        - label: 固件刷机
+          required: false
+        - label: 屏幕投屏（scrcpy）
+          required: false
+        - label: 开机动画替换
+          required: false
+        - label: 分辨率 / DPI 调整
+          required: false
+        - label: 截屏与录屏
+          required: false
+
+  - type: textarea
+    id: details
+    attributes:
+      label: 详细结果与备注
+      description: 哪些顺利、哪些有问题、有什么机型特有的注意事项
+      placeholder: |
+        固件刷机正常，flashfile.xml 解析出 27 条命令，刷完正常开机。
+
+        注意：该机型刷机后第一次开机约 5 分钟，属于正常现象。
+
+        投屏使用高清模式时略微卡顿，普通模式流畅。
+    validations:
+      required: true
+
+  - type: textarea
+    id: problems
+    attributes:
+      label: 遇到的问题
+      description: 有失败或异常的功能请在这里详述，并附上日志片段
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 以上结果是我在真实设备上实际测试的，不是推测
+          required: true
+        - label: 我已确认内容中没有设备序列号等隐私信息
+          required: true
+        - label: 我了解刷机存在风险，且这条记录只代表我的单次测试结果
+          required: true

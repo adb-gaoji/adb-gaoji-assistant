@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ADB搞机助手</title>
+  <link rel="stylesheet" href="../node_modules/@phosphor-icons/web/src/regular/style.css" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell" data-ui-version="20.3.2">
+    <aside class="sidebar app-header">
+      <div class="brand">
+        <img src="./assets/app.png" alt="" class="brand-mark" />
+        <div class="brand-copy">
+          <strong>ADB搞机助手</strong>
+          <span>Android 设备工作台</span>
+        </div>
+      </div>
+      <nav class="nav-list" aria-label="功能导航">
+        <button class="nav-item active" data-page="device"><i class="ph ph-device-mobile" aria-hidden="true"></i><span>设备概览</span></button>
+        <button class="nav-item" data-page="system"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i><span>连接与投屏</span></button>
+        <button class="nav-item" data-page="root"><i class="ph ph-shield-check" aria-hidden="true"></i><span>Root 与面具</span></button>
+        <button class="nav-item" data-page="extract"><i class="ph ph-hard-drives" aria-hidden="true"></i><span>分区提取</span></button>
+        <button class="nav-item" data-page="firmware"><i class="ph ph-package" aria-hidden="true"></i><span>固件刷机</span></button>
+        <button class="nav-item" data-page="fastboot"><i class="ph ph-lightning" aria-hidden="true"></i><span>引导刷入</span></button>
+        <button class="nav-item" data-page="apps"><i class="ph ph-squares-four" aria-hidden="true"></i><span>应用管理</span></button>
+        <button class="nav-item" data-page="gms"><i class="ph ph-google-logo" aria-hidden="true"></i><span>谷歌三件套</span></button>
+        <button class="nav-item" data-page="repair"><i class="ph ph-first-aid-kit" aria-hidden="true"></i><span>修复与救砖</span></button>
+        <button class="nav-item" data-page="tools"><i class="ph ph-toolbox" aria-hidden="true"></i><span>基础工具</span></button>
+        <button class="nav-item" data-page="advanced"><i class="ph ph-stack" aria-hidden="true"></i><span>高级工具</span><span class="nav-badge" id="featureBadge">100+</span></button>
+        <button class="nav-item" data-page="log"><i class="ph ph-terminal-window" aria-hidden="true"></i><span>日志</span><span class="nav-badge" id="logBadge" hidden>0</span></button>
+      </nav>
+      <div class="connection-state" id="sidebarConnection" data-state="offline" hidden>
+        <span class="state-indicator" aria-hidden="true"></span>
+        <div><strong id="sidebarMode">未连接</strong><span id="sidebarDevice">等待设备</span></div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <div class="command-bar">
+        <div class="page-heading">
+          <h1 id="pageTitle">设备概览</h1>
+          <p id="pageSub">查看连接状态、设备信息和常用重启操作</p>
+        </div>
+        <div class="command-actions">
+          <label class="device-picker">
+            <span>当前设备</span>
+            <select id="deviceSelect" aria-label="当前设备"><option>自动选择</option></select>
+          </label>
+          <button class="icon-button" id="refresh" type="button" title="刷新设备状态" aria-label="刷新设备状态">
+            <i class="ph ph-arrow-clockwise" aria-hidden="true"></i>
+          </button>
+          <button class="icon-button" id="themeToggle" type="button" title="切换界面风格" aria-label="切换界面风格">
+            <i class="ph ph-palette" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="content-scroll">
+        <section class="page active" id="page-device">
+          <section class="workbench-panel home-device-panel">
+            <div class="workbench-titlebar"><div><h2>当前设备</h2><p>连接后自动读取设备、系统、Root、Bootloader、槽位和电量。</p></div><button class="secondary-button" data-navigate="system"><i class="ph ph-plugs-connected" aria-hidden="true"></i><span>连接向导</span></button></div>
+            <div class="home-device-row">
+              <div class="mode-chip" id="modePill" data-state="offline"><span class="state-indicator"></span><span>检测中</span></div>
+              <div class="home-device-name"><h2 id="deviceName">未检测到设备</h2><p id="heroStatus">请连接手机并开启 USB 调试</p></div>
+            </div>
+            <dl class="detail-grid home-detail-grid">
+              <div><dt>连接模式</dt><dd id="connectionModeText">未连接</dd></div>
+              <div><dt>Android / 型号</dt><dd><span id="androidVersion">-</span> / <span id="model">-</span></dd></div>
+              <div><dt>Root / Magisk</dt><dd><span id="rootStatus">未知</span> / <span id="magiskStatus">未知</span></dd></div>
+              <div><dt>槽位 / 电量</dt><dd><span id="slotText">-</span> / <span id="batteryText">未知</span></dd></div>
+            </dl>
+            <span id="manufacturer" hidden>-</span><span id="deviceCode" hidden>-</span><span id="cpu" hidden>-</span><span id="serial" hidden>-</span>
+            <div class="battery-track" role="progressbar" aria-label="设备电量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="batteryFill"></span></div>
+          </section>
+          <section class="recommendation-panel">
+            <div><span>推荐操作</span><h2 id="recommendationTitle">先连接手机并完成 USB 调试授权</h2><p id="recommendationText">连接向导会区分未连接、未授权、ADB 和 Fastboot 状态。</p></div>
+            <div class="button-row"><button class="secondary-button" data-navigate="log"><i class="ph ph-list-checks" aria-hidden="true"></i><span>查看结果</span></button><button class="primary-button" data-navigate="system"><i class="ph ph-plugs-connected" aria-hidden="true"></i><span>开始连接检测</span></button></div>
+          </section>
+          <section class="workbench-panel recent-panel">
+            <div class="workbench-titlebar"><div><h2>快速操作</h2><p>连接成功后，可从这里直接切换设备运行模式。</p></div><button class="secondary-button" data-navigate="advanced"><i class="ph ph-stack" aria-hidden="true"></i><span>查看全部功能</span></button></div>
+            <div class="tool-strip">
+              <button class="secondary-button" data-action="reboot-system"><i class="ph ph-power" aria-hidden="true"></i><span>重启系统</span></button>
+              <button class="secondary-button" data-action="reboot-recovery"><i class="ph ph-first-aid-kit" aria-hidden="true"></i><span>Recovery</span></button>
+              <button class="secondary-button" data-action="reboot-fastboot"><i class="ph ph-lightning" aria-hidden="true"></i><span>Bootloader</span></button>
+              <button class="secondary-button" data-action="fastboot-reboot"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i><span>Fastboot 重启</span></button>
+            </div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-system">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar">
+              <div><h2>连接向导</h2><p>自动判断未连接、未授权、ADB 或 Fastboot 状态，并给出下一步。</p></div>
+              <button class="primary-button" id="connectionRefresh" type="button"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>开始检测</span></button>
+            </div>
+            <div class="workflow-grid" aria-label="连接检测流程">
+              <div class="workflow-step"><span>1</span><div><strong>检测连接</strong><small>读取 ADB 与 Fastboot 设备列表</small></div></div>
+              <div class="workflow-step"><span>2</span><div><strong>判断问题</strong><small>识别授权、驱动、数据线和设备模式</small></div></div>
+              <div class="workflow-step"><span>3</span><div><strong>执行修复</strong><small>按当前状态选择对应的连接工具</small></div></div>
+              <div class="workflow-step"><span>4</span><div><strong>复测确认</strong><small>重新读取设备并更新连接状态</small></div></div>
+            </div>
+            <div class="tool-strip">
+              <button class="secondary-button" data-action="install-driver"><i class="ph ph-plugs-connected" aria-hidden="true"></i><span>安装 ADB 驱动</span></button>
+              <button class="secondary-button" data-action="adb-authorize"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i><span>重启 ADB 服务</span></button>
+              <button class="secondary-button" data-action="reboot-system"><i class="ph ph-power" aria-hidden="true"></i><span>重启到系统</span></button>
+              <button class="secondary-button" data-action="reboot-fastboot"><i class="ph ph-lightning" aria-hidden="true"></i><span>进入 Fastboot</span></button>
+              <button class="secondary-button" data-action="wireless-pair"><i class="ph ph-link" aria-hidden="true"></i><span>无线配对</span></button>
+              <button class="secondary-button" data-action="wireless-mirror"><i class="ph ph-wifi-high" aria-hidden="true"></i><span>无线 ADB / 投屏</span></button>
+              <button class="secondary-button" data-action="open-terminal"><i class="ph ph-terminal-window" aria-hidden="true"></i><span>ADB 命令行</span></button>
+            </div>
+            <div class="inline-console" id="connectionSummary"><i class="ph ph-info" aria-hidden="true"></i><span>等待连接检测，检测结果和执行记录会同步到运行日志。</span></div>
+          </section>
+          <section class="workbench-panel compact-panel">
+            <div class="panel-caption"><div><h3>连接与投屏</h3><p>连接稳定后再启动投屏，避免窗口反复断开。</p></div></div>
+            <div class="action-grid compact-grid">
+              <button class="command-tile" data-action="start-mirror"><span class="command-icon"><i class="ph ph-monitor-play" aria-hidden="true"></i></span><span class="command-copy"><strong>有线投屏</strong><small>使用默认参数启动 scrcpy</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="mirror-console"><span class="command-icon"><i class="ph ph-sliders-horizontal" aria-hidden="true"></i></span><span class="command-copy"><strong>投屏控制台</strong><small>选择码率、分辨率和控制方式</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="mirror-session-status"><span class="command-icon"><i class="ph ph-activity" aria-hidden="true"></i></span><span class="command-copy"><strong>投屏状态</strong><small>查看当前设备的投屏会话</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="stop-mirror"><span class="command-icon"><i class="ph ph-stop" aria-hidden="true"></i></span><span class="command-copy"><strong>停止投屏</strong><small>只停止当前设备的投屏进程</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+            </div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-root">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>Root 工具</h2><p>沿用旧版的两列操作布局，先检测权限环境，再安装或维护面具。</p></div></div>
+            <div class="action-grid legacy-order-grid">
+              <button class="command-tile" data-action="check-root"><span class="command-icon"><i class="ph ph-key" aria-hidden="true"></i></span><span class="command-copy"><strong>获取 Root 授权</strong><small>请求 Shell 超级用户权限并验证 uid</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="check-magisk"><span class="command-icon"><i class="ph ph-shield-check" aria-hidden="true"></i></span><span class="command-copy"><strong>检测 Magisk</strong><small>读取 Magisk 命令、版本和授权状态</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="check-zygisk"><span class="command-icon"><i class="ph ph-cpu" aria-hidden="true"></i></span><span class="command-copy"><strong>Zygisk 状态</strong><small>检查 Zygisk 开关和运行环境</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile primary-tile" data-action="configure-denylist-user-apps"><span class="command-icon"><i class="ph ph-list-checks" aria-hidden="true"></i></span><span class="command-copy"><strong>批量加入 DenyList</strong><small>将当前用户全部已安装应用加入 Magisk DenyList</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="list-magisk-modules"><span class="command-icon"><i class="ph ph-puzzle-piece" aria-hidden="true"></i></span><span class="command-copy"><strong>Magisk 模块</strong><small>列出当前已安装的模块</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile primary-tile" data-action="install-magisk"><span class="command-icon"><i class="ph ph-download-simple" aria-hidden="true"></i></span><span class="command-copy"><strong>安装 Alpha 面具</strong><small>使用内置 alpha.apk 执行覆盖安装</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="adb-authorize"><span class="command-icon"><i class="ph ph-usb" aria-hidden="true"></i></span><span class="command-copy"><strong>等待 ADB 授权</strong><small>重新建立连接并等待手机确认 USB 调试</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+            </div>
+          </section>
+          <section class="workbench-panel compact-panel">
+            <div class="panel-caption"><div><h3>Root 流程快捷操作</h3><p>提取镜像、制作 Tea 镜像与引导刷入集中在对应页面，避免重复入口。</p></div></div>
+            <div class="tool-strip">
+              <button class="secondary-button" data-navigate="extract"><i class="ph ph-hard-drives" aria-hidden="true"></i><span>分区提取</span></button>
+              <button class="secondary-button" data-navigate="fastboot"><i class="ph ph-lightning" aria-hidden="true"></i><span>引导刷入 / Tea 制作</span></button>
+              <button class="secondary-button" data-navigate="firmware"><i class="ph ph-package" aria-hidden="true"></i><span>固件刷机</span></button>
+            </div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-extract">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>分区提取</h2><p>提取 boot_a/b 与 init_boot_a/b 到桌面目录，布局和顺序与旧版一致。</p></div></div>
+            <div class="partition-grid legacy-order-grid">
+              <button class="primary-partition" data-action="extract-all"><span>一键提取全部</span><small>自动提取四个常用引导分区</small><i class="ph ph-download-simple" aria-hidden="true"></i></button>
+              <button data-action="open-output" data-dir="boot"><span>打开输出目录</span><small>查看桌面 boot 输出文件</small><i class="ph ph-folder-open" aria-hidden="true"></i></button>
+              <button data-action="extract-part" data-part="boot_a"><span>提取 boot_a</span><small>单独提取 A 槽位 boot</small><i class="ph ph-download-simple" aria-hidden="true"></i></button>
+              <button data-action="extract-part" data-part="boot_b"><span>提取 boot_b</span><small>单独提取 B 槽位 boot</small><i class="ph ph-download-simple" aria-hidden="true"></i></button>
+              <button data-action="extract-part" data-part="init_boot_a"><span>提取 init_boot_a</span><small>单独提取 A 槽位 init_boot</small><i class="ph ph-download-simple" aria-hidden="true"></i></button>
+              <button data-action="extract-part" data-part="init_boot_b"><span>提取 init_boot_b</span><small>单独提取 B 槽位 init_boot</small><i class="ph ph-download-simple" aria-hidden="true"></i></button>
+            </div>
+            <div class="tool-strip bottom-tools"><button class="secondary-button" data-action="open-output" data-dir="init_boot"><i class="ph ph-folder-open" aria-hidden="true"></i><span>打开 init_boot 目录</span></button><button class="secondary-button" data-action="open-key-backup-dir"><i class="ph ph-archive" aria-hidden="true"></i><span>关键分区备份目录</span></button></div>
+          </section>
+        </section>
+
+        <section class="page" id="page-firmware">
+          <section class="legacy-workbench">
+            <div class="legacy-workbench-heading"><div><h2>一键刷机</h2><p>选择官方 ZIP / XML 后直接按 XML 执行 Fastboot 命令，默认按脚本执行 erase、flash、reboot。</p></div><button class="secondary-button" data-action="firmware-downloads"><i class="ph ph-download-simple" aria-hidden="true"></i><span>刷机包下载</span></button></div>
+            <input class="flash-path" id="firmwareSelection" type="text" value="" placeholder="选择刷机包 ZIP、XML 或已解压目录" readonly />
+            <div class="flash-actions">
+              <button class="flash-action flash-green" data-action="firmware-select-package"><i class="ph ph-folder-open" aria-hidden="true"></i><span>选择刷机包</span></button>
+              <button class="flash-action flash-blue" data-action="firmware-select-folder"><i class="ph ph-folder-notch-open" aria-hidden="true"></i><span>选择目录</span></button>
+              <button class="flash-action flash-blue" data-action="reboot-fastboot"><i class="ph ph-lightning" aria-hidden="true"></i><span>进入 Fastboot</span></button>
+              <button class="flash-action flash-neutral" data-action="firmware-preview"><i class="ph ph-list-dashes" aria-hidden="true"></i><span>解析命令</span></button>
+              <button class="flash-action flash-red" data-action="firmware-flash" data-allow-erase="true" data-confirm="确认开始刷手机整机固件？请确认机型、地区、版本和 Fastboot 状态完全匹配。"><i class="ph ph-warning" aria-hidden="true"></i><span>开始刷机</span></button>
+            </div>
+            <div class="flash-script-row"><span>刷机脚本</span><div class="segmented-control" role="tablist" aria-label="刷机脚本选择"><button class="segment active" data-firmware-xml-mode="auto">自动选择</button><button class="segment" data-firmware-xml-mode="service">servicefile.xml</button><button class="segment" data-firmware-xml-mode="flash">flashfile.xml</button><button class="segment" data-firmware-xml-mode="cfc">CFC.xml</button></div></div>
+            <pre class="flash-console" id="firmwarePreview">点击“选择刷机包”选择 ZIP 或 XML。
+
+选择后会解析 Fastboot 命令；确认手机已经进入 Fastboot 后点“开始刷机”。</pre>
+            <div class="flash-footer-actions"><button class="flash-footer-button flash-green" data-action="firmware-preview"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i><span>重新解析</span></button><button class="flash-footer-button" data-action="firmware-open-folder"><i class="ph ph-folder-open" aria-hidden="true"></i><span>打开刷机包目录</span></button><button class="flash-footer-button" data-action="firmware-motoflashpro"><i class="ph ph-arrow-square-out" aria-hidden="true"></i><span>打开 MotoFlashPro</span></button><button class="flash-footer-button flash-red" data-action="firmware-flash" data-allow-erase="true" data-confirm="确认开始刷手机整机固件？请确认机型、地区、版本和 Fastboot 状态完全匹配."><i class="ph ph-warning" aria-hidden="true"></i><span>开始刷机</span></button></div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-fastboot">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>Fastboot 刷入工作台</h2><p>先识别镜像和当前槽位，再选择临时启动或写入分区。</p></div><span class="status-badge"><span class="state-indicator"></span>连接状态见左下角</span></div>
+            <div class="action-grid legacy-order-grid">
+              <button class="command-tile danger-tile" data-action="flash-image" data-partition="boot" data-confirm="确认刷入 boot？刷错会导致无法开机。"><span class="command-icon"><i class="ph ph-warning" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入 Boot</strong><small>选择 A/B 槽位对应的 boot 镜像后写入</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile danger-tile" data-action="flash-image" data-partition="init_boot" data-confirm="确认刷入 init_boot？请确保镜像匹配机型和槽位。"><span class="command-icon"><i class="ph ph-warning" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入 init_boot</strong><small>适用于使用 init_boot 的新版本设备</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="boot-image" data-confirm="确认临时启动选择的镜像？"><span class="command-icon"><i class="ph ph-play" aria-hidden="true"></i></span><span class="command-copy"><strong>临时启动 IMG</strong><small>执行 fastboot boot，不写入任何分区</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="flash-image" data-confirm="确认刷入自选分区？请确保分区名与镜像完全匹配。"><span class="command-icon"><i class="ph ph-hard-drives" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入任意 IMG</strong><small>手动选择镜像，默认写入 boot 分区</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+            </div>
+            <div class="panel-caption section-separator"><div><h3>辅助操作</h3><p>先检查槽位和设备变量，再执行写入。</p></div></div>
+            <div class="tool-strip">
+              <button class="secondary-button" id="fastbootRefresh" type="button"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i><span>刷新状态</span></button>
+              <button class="secondary-button" data-action="current-slot"><i class="ph ph-arrows-left-right" aria-hidden="true"></i><span>查看当前槽位</span></button>
+              <button class="secondary-button" data-action="fastboot-getvar-all"><i class="ph ph-list-magnifying-glass" aria-hidden="true"></i><span>Getvar 全部</span></button>
+              <button class="secondary-button" data-action="fastboot-reboot"><i class="ph ph-power" aria-hidden="true"></i><span>重启到系统</span></button>
+              <button class="secondary-button" data-action="reboot-fastboot"><i class="ph ph-lightning" aria-hidden="true"></i><span>重启到 Fastboot</span></button>
+              <button class="secondary-button" data-action="open-terminal"><i class="ph ph-terminal-window" aria-hidden="true"></i><span>打开命令行</span></button>
+            </div>
+          </section>
+          <section class="workbench-panel compact-panel tea-panel">
+            <div class="panel-caption"><div><h3>Tea 制作</h3><p>从内置 Tea 模板库选择匹配机型、Android 版本和槽位，生成带校验报告的镜像。</p></div><button class="primary-button" data-action="tea-boot-builder"><i class="ph ph-magic-wand" aria-hidden="true"></i><span>选择模板制作</span></button></div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-tools">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>基础工具</h2><p>按旧版分组保留文件、显示、投屏、驱动和终端常用入口。</p></div></div>
+            <div class="group-band"><h3>文件与设备</h3><div class="action-grid compact-grid">
+              <button class="command-tile" data-action="push-file"><span class="command-icon"><i class="ph ph-upload-simple" aria-hidden="true"></i></span><span class="command-copy"><strong>推送文件</strong><small>选择文件并发送到 /sdcard/</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="pull-path"><span class="command-icon"><i class="ph ph-download-simple" aria-hidden="true"></i></span><span class="command-copy"><strong>拉取文件</strong><small>从手机路径导出到电脑</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="screenshot"><span class="command-icon"><i class="ph ph-camera" aria-hidden="true"></i></span><span class="command-copy"><strong>手机截图</strong><small>截取当前屏幕并保存到输出目录</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="screenrecord"><span class="command-icon"><i class="ph ph-video-camera" aria-hidden="true"></i></span><span class="command-copy"><strong>手机录屏</strong><small>录制设备画面并保存到电脑</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+            </div></div>
+            <div class="group-band"><h3>显示与连接</h3><div class="tool-strip">
+              <button class="secondary-button" data-action="change-dpi"><i class="ph ph-text-aa" aria-hidden="true"></i><span>修改 DPI</span></button>
+              <button class="secondary-button" data-action="change-size"><i class="ph ph-corners-out" aria-hidden="true"></i><span>修改分辨率</span></button>
+              <button class="secondary-button" data-action="reset-display"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i><span>恢复显示</span></button>
+              <button class="secondary-button" data-action="install-driver"><i class="ph ph-plugs-connected" aria-hidden="true"></i><span>安装驱动</span></button>
+              <button class="secondary-button" data-action="open-terminal"><i class="ph ph-terminal-window" aria-hidden="true"></i><span>命令行</span></button>
+              <button class="secondary-button" data-action="open-tools-output"><i class="ph ph-folder-open" aria-hidden="true"></i><span>输出目录</span></button>
+            </div></div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-apps">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>应用管理</h2><p>安装前检测连接；应用列表按应用名和包名显示。</p></div><button class="primary-button" data-action="list-packages"><i class="ph ph-list-magnifying-glass" aria-hidden="true"></i><span>读取应用列表</span></button></div>
+            <div class="group-band"><h3>安装</h3><div class="action-grid legacy-order-grid">
+              <button class="command-tile" data-action="install-apk-single"><span class="command-icon"><i class="ph ph-package" aria-hidden="true"></i></span><span class="command-copy"><strong>单个安装 APK/APKS</strong><small>选择一个安装包并安装到当前手机</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="install-apk-batch"><span class="command-icon"><i class="ph ph-stack-plus" aria-hidden="true"></i></span><span class="command-copy"><strong>批量安装 APK/APKS</strong><small>选择文件夹并批量安装 Android 安装包</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="install-framework"><span class="command-icon"><i class="ph ph-puzzle-piece" aria-hidden="true"></i></span><span class="command-copy"><strong>框架安装</strong><small>安装 Xposed / LSPosed 或本地框架包</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="install-clone-tools"><span class="command-icon"><i class="ph ph-users-three" aria-hidden="true"></i></span><span class="command-copy"><strong>安装分身工具</strong><small>安装内置用户管理与分身工具</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+            </div></div>
+            <div class="group-band"><h3>应用管理</h3><div class="tool-strip">
+              <button class="secondary-button" data-action="export-apk"><i class="ph ph-export" aria-hidden="true"></i><span>导出 APK</span></button>
+              <button class="secondary-button" data-action="uninstall-package"><i class="ph ph-trash" aria-hidden="true"></i><span>卸载应用</span></button>
+              <button class="secondary-button" data-action="clear-app-data"><i class="ph ph-broom" aria-hidden="true"></i><span>清理数据</span></button>
+              <button class="secondary-button" data-action="freeze-app-user0"><i class="ph ph-snowflake" aria-hidden="true"></i><span>冻结应用</span></button>
+              <button class="secondary-button" data-action="unfreeze-app-user0"><i class="ph ph-sun" aria-hidden="true"></i><span>解冻应用</span></button>
+              <button class="secondary-button" data-navigate="gms"><i class="ph ph-google-logo" aria-hidden="true"></i><span>进入谷歌三件套</span></button>
+            </div></div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-gms">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>Google 服务修复中心</h2><p>按旧版流程集中检测、安装和修复服务框架、Play 服务与 Play 商店。</p></div><button class="primary-button" data-action="gms-deep-diagnose"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>深度诊断环境</span></button></div>
+            <div class="group-band"><h3>检测与安装</h3><div class="action-grid legacy-order-grid">
+              <button class="command-tile" data-action="gms-deep-diagnose"><span class="command-icon"><i class="ph ph-stethoscope" aria-hidden="true"></i></span><span class="command-copy"><strong>检测谷歌服务环境</strong><small>检查 GSF、Play 服务、Play 商店、版本和启用状态</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="gms-install-builtin"><span class="command-icon"><i class="ph ph-download-simple" aria-hidden="true"></i></span><span class="command-copy"><strong>一键安装 / 更新</strong><small>按服务框架、Play 服务、Play 商店顺序安装内置包</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="gms-download-adapted"><span class="command-icon"><i class="ph ph-device-mobile" aria-hidden="true"></i></span><span class="command-copy"><strong>准备内置三件套</strong><small>复制内置安装包并生成当前设备诊断与安装顺序</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="gms-import-local"><span class="command-icon"><i class="ph ph-folder-open" aria-hidden="true"></i></span><span class="command-copy"><strong>导入本地三件套</strong><small>选择本地 APK 或 APKS 安装包加入当前处理流程</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+            </div></div>
+            <div class="group-band"><h3>故障修复</h3><div class="tool-strip">
+              <button class="secondary-button" data-action="gms-fix-crash"><i class="ph ph-first-aid-kit" aria-hidden="true"></i><span>修复 Play 服务停止</span></button>
+              <button class="secondary-button" data-action="gms-persistent-fix"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i><span>修复重启后失效</span></button>
+              <button class="secondary-button" data-action="gms-fix-app-license"><i class="ph ph-key" aria-hidden="true"></i><span>修复应用运行</span></button>
+              <button class="secondary-button" data-action="fix-tiktok-network"><i class="ph ph-globe" aria-hidden="true"></i><span>修复 TikTok 联网</span></button>
+              <button class="secondary-button" data-action="gms-open-google-switch"><i class="ph ph-toggle-right" aria-hidden="true"></i><span>打开谷歌服务开关</span></button>
+            </div></div>
+            <div class="group-band"><h3>下载与管理</h3><div class="tool-strip">
+              <button class="secondary-button" data-action="gms-open-downloads"><i class="ph ph-arrow-square-out" aria-hidden="true"></i><span>打开最新版下载</span></button>
+              <button class="secondary-button" data-action="gms-uninstall" data-confirm="卸载谷歌三件套会移除主空间中的服务框架、Play 服务和 Play 商店，确认继续？"><i class="ph ph-trash" aria-hidden="true"></i><span>卸载谷歌三件套</span></button>
+            </div></div>
+          </section>
+        </section>
+
+        <section class="page workbench-page" id="page-repair">
+          <section class="workbench-panel">
+            <div class="workbench-titlebar"><div><h2>修复中心</h2><p>把刷机后常见问题按无线、基带、应用和救砖流程集中处理。</p></div><button class="primary-button" data-action="diagnose-wireless-stack"><i class="ph ph-stethoscope" aria-hidden="true"></i><span>一键深度检测</span></button></div>
+            <div class="group-band"><h3>无线与基带</h3><div class="action-grid legacy-order-grid">
+              <button class="command-tile" data-action="fix-wifi-after-flash"><span class="command-icon"><i class="ph ph-wifi-high" aria-hidden="true"></i></span><span class="command-copy"><strong>一键 Wi-Fi 驱动重载修复</strong><small>检测、重启、复测扫描，固化刷机后修复流程</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="diagnose-baseband"><span class="command-icon"><i class="ph ph-cell-signal-full" aria-hidden="true"></i></span><span class="command-copy"><strong>无线 / 基带深度检测</strong><small>读取 Wi-Fi、蓝牙、基带、SIM 和日志关键词</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="fix-voice-call-audio"><span class="command-icon"><i class="ph ph-speaker-high" aria-hidden="true"></i></span><span class="command-copy"><strong>语音通话重启 / 音量修复</strong><small>修复语音导致重启、听筒路由或外放变小</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="strategy-check"><span class="command-icon"><i class="ph ph-path" aria-hidden="true"></i></span><span class="command-copy"><strong>维修策略引擎</strong><small>根据当前状态给出修复或刷机的先后顺序</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+            </div></div>
+            <div class="group-band"><h3>救砖与报告</h3><div class="tool-strip">
+              <button class="secondary-button" data-navigate="gms"><i class="ph ph-google-logo" aria-hidden="true"></i><span>谷歌三件套修复</span></button>
+              <button class="secondary-button" data-action="rescue-diagnose"><i class="ph ph-lifebuoy" aria-hidden="true"></i><span>救砖路径分析</span></button>
+              <button class="secondary-button" data-action="fastboot-continue"><i class="ph ph-play" aria-hidden="true"></i><span>Fastboot 继续启动</span></button>
+              <button class="secondary-button" data-action="edl-9008-console"><i class="ph ph-warning" aria-hidden="true"></i><span>9008 救砖控制台</span></button>
+              <button class="secondary-button" data-action="ai-export-report"><i class="ph ph-file-arrow-down" aria-hidden="true"></i><span>导出修复报告</span></button>
+            </div></div>
+          </section>
+        </section>
+
+        <section class="page legacy-layout-page" id="page-advanced">
+          <section class="section-block feature-directory">
+            <div class="section-heading"><div><h2>高级工具目录</h2><p>原版工作台的完整功能入口，按维护流程分组；危险写入动作仍会二次确认。</p></div><div class="directory-actions"><span class="directory-count" id="featureCount">0 个功能</span></div></div>
+            <div class="directory-tabs" role="tablist" aria-label="高级功能分类">
+              <button class="directory-tab active" data-feature-tab="diagnose">诊断与任务</button>
+              <button class="directory-tab" data-feature-tab="rootflash">Root 与刷机</button>
+              <button class="directory-tab" data-feature-tab="repair">修复与救砖</button>
+              <button class="directory-tab" data-feature-tab="apps">应用与 GMS</button>
+              <button class="directory-tab" data-feature-tab="tools">设备与工具</button>
+              <button class="directory-tab" data-feature-tab="bootanim">动画与备份</button>
+            </div>
+            <div class="feature-grid directory-grid" id="advancedFeatures"></div>
+          </section>
+        </section>
+
+        <section class="page log-page" id="page-log">
+          <div class="log-toolbar">
+            <div><h2>命令输出</h2><p>ADB 与 Fastboot 的实时运行记录</p></div>
+            <div class="log-actions">
+              <label class="log-search"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="logSearch" type="search" placeholder="搜索日志" aria-label="搜索日志" /></label>
+              <span class="log-match-count" id="logMatchCount" aria-live="polite">0 条</span>
+              <button class="icon-button" id="copyLog" type="button" title="复制日志" aria-label="复制日志"><i class="ph ph-copy" aria-hidden="true"></i></button>
+              <button class="icon-button" id="exportLog" type="button" title="导出日志" aria-label="导出日志"><i class="ph ph-download-simple" aria-hidden="true"></i></button>
+              <button class="icon-button" id="clearLog" type="button" title="清空日志" aria-label="清空日志"><i class="ph ph-trash" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <pre id="log" aria-live="polite"></pre>
+        </section>
+      </div>
+
+      <div class="task-status" id="taskStatus" data-state="idle" role="status" aria-live="polite">
+        <div class="task-status-main"><i class="ph ph-check-circle" aria-hidden="true"></i><span>准备就绪</span><small id="taskStatusMeta"></small></div>
+        <div class="task-status-actions">
+          <button class="icon-button" id="copyTaskError" type="button" title="复制错误" aria-label="复制错误" hidden><i class="ph ph-copy" aria-hidden="true"></i></button>
+          <button class="secondary-button" id="openTaskCenter" type="button"><i class="ph ph-list-checks" aria-hidden="true"></i><span>任务中心</span></button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <dialog class="firmware-library" id="firmwareLibrary" aria-labelledby="firmwareLibraryTitle">
+    <div class="modal-heading"><div><h2 id="firmwareLibraryTitle">刷机包中心</h2><p>按品牌、机型、设备代号或地区查找对应固件。</p></div><button class="icon-button" id="closeFirmwareLibrary" type="button" title="关闭" aria-label="关闭"><i class="ph ph-x" aria-hidden="true"></i></button></div>
+    <div class="firmware-search-row"><label><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="firmwareSearch" type="search" placeholder="搜索机型、XT 型号、设备代号或地区" /></label><select id="firmwareBrand" aria-label="品牌筛选"><option value="all">全部品牌</option><option value="Motorola">Motorola</option><option value="Lenovo">Lenovo</option></select><span id="firmwareResultCount">0 个型号</span></div>
+    <div class="firmware-list" id="firmwareList"></div>
+  </dialog>
+  <dialog class="app-manager-dialog" id="appManagerDialog" aria-labelledby="appManagerTitle">
+    <div class="modal-heading">
+      <div><h2 id="appManagerTitle">应用管理</h2><p id="appManagerSummary">等待读取应用列表</p></div>
+      <div class="modal-heading-actions">
+        <button class="secondary-button" id="refreshAppManager" type="button"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i><span>刷新列表</span></button>
+        <button class="icon-button" id="closeAppManager" type="button" title="关闭" aria-label="关闭"><i class="ph ph-x" aria-hidden="true"></i></button>
+      </div>
+    </div>
+    <div class="app-manager-view-tabs" role="tablist" aria-label="管理视图">
+      <button class="directory-tab active" data-app-manager-view="apps" type="button"><i class="ph ph-squares-four" aria-hidden="true"></i><span>应用列表</span></button>
+      <button class="directory-tab" data-app-manager-view="storage" type="button"><i class="ph ph-hard-drive" aria-hidden="true"></i><span>存储清理</span></button>
+    </div>
+    <div class="app-manager-view" id="appManagerAppView">
+      <div class="app-manager-toolbar">
+        <label class="app-manager-search"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input id="appManagerSearch" type="search" placeholder="搜索中文名称或包名" /></label>
+        <label class="app-manager-sort"><i class="ph ph-sort-ascending" aria-hidden="true"></i><select id="appManagerSort" aria-label="应用排序"><option value="name-asc">名称 A-Z</option><option value="name-desc">名称 Z-A</option><option value="size-desc">空间 从大到小</option><option value="size-asc">空间 从小到大</option><option value="type-user">类型 用户优先</option><option value="type-system">类型 系统优先</option><option value="state-frozen">状态 已冻结优先</option><option value="state-enabled">状态 正常优先</option></select></label>
+        <div class="app-filter-tabs" role="tablist" aria-label="应用分类">
+          <button class="directory-tab active" data-app-filter="user" type="button">用户应用 <span></span></button>
+          <button class="directory-tab" data-app-filter="system" type="button">系统应用 <span></span></button>
+          <button class="directory-tab" data-app-filter="frozen" type="button">已冻结 <span></span></button>
+          <button class="directory-tab" data-app-filter="all" type="button">全部 <span></span></button>
+        </div>
+      </div>
+      <div class="app-batch-toolbar">
+        <label class="app-select-all"><input id="selectAllVisibleApps" type="checkbox" /><span>全选当前列表</span></label>
+        <strong id="selectedAppCount">已选 0 项</strong>
+        <div class="app-batch-actions">
+          <button class="secondary-button" data-app-batch-action="export" type="button" disabled><i class="ph ph-export" aria-hidden="true"></i><span>批量导出</span></button>
+          <button class="secondary-button danger-outline" data-app-batch-action="uninstall" type="button" disabled><i class="ph ph-trash" aria-hidden="true"></i><span>批量卸载</span></button>
+          <button class="secondary-button" data-app-batch-action="freeze" type="button" disabled><i class="ph ph-snowflake" aria-hidden="true"></i><span>批量冻结</span></button>
+          <button class="secondary-button" data-app-batch-action="unfreeze" type="button" disabled><i class="ph ph-sun" aria-hidden="true"></i><span>批量解冻</span></button>
+        </div>
+      </div>
+      <div class="app-manager-message" id="appManagerMessage" role="status" aria-live="polite"></div>
+      <div class="app-manager-grid" id="appManagerGrid">
+        <div class="app-manager-list" id="appManagerList" role="listbox" aria-label="应用列表" tabindex="0"></div>
+        <section class="app-manager-detail" id="appManagerDetail" aria-label="应用详情">
+          <div class="app-detail-empty">选择一个应用查看详情</div>
+        </section>
+      </div>
+    </div>
+    <section class="storage-manager-view" id="storageManagerView" aria-label="存储清理" hidden>
+      <div class="storage-overview">
+        <div><span>设备存储</span><strong id="storageUsageText">等待扫描</strong><small id="storageFreeText">连接设备后读取真实占用</small></div>
+        <div class="storage-usage-track" aria-hidden="true"><span id="storageUsageBar"></span></div>
+      </div>
+      <div class="app-manager-message" id="storageManagerMessage" role="status" aria-live="polite"></div>
+      <div class="storage-category-grid" id="storageCategoryGrid">
+        <article class="storage-category" data-storage-category="apps"><span class="storage-category-icon"><i class="ph ph-squares-four" aria-hidden="true"></i></span><div><h3>应用</h3><strong data-storage-value>--</strong><p data-storage-meta>等待扫描应用数量</p></div><button class="secondary-button" data-storage-action="manage-apps" type="button">管理应用</button></article>
+        <article class="storage-category" data-storage-category="photos"><span class="storage-category-icon"><i class="ph ph-image" aria-hidden="true"></i></span><div><h3>照片</h3><strong data-storage-value>--</strong><p data-storage-meta>DCIM 与 Pictures</p></div><button class="secondary-button danger-outline" data-storage-action="clear-photos" type="button">清理照片</button></article>
+        <article class="storage-category" data-storage-category="videos"><span class="storage-category-icon"><i class="ph ph-video-camera" aria-hidden="true"></i></span><div><h3>视频</h3><strong data-storage-value>--</strong><p data-storage-meta>DCIM、Movies 与 Pictures</p></div><button class="secondary-button danger-outline" data-storage-action="clear-videos" type="button">清理视频</button></article>
+        <article class="storage-category" data-storage-category="cache"><span class="storage-category-icon"><i class="ph ph-lightning" aria-hidden="true"></i></span><div><h3>应用缓存</h3><strong data-storage-value>--</strong><p data-storage-meta>等待扫描缓存应用数量</p></div><button class="secondary-button" data-storage-action="clear-cache" type="button">清理缓存</button></article>
+        <article class="storage-category" data-storage-category="junk"><span class="storage-category-icon"><i class="ph ph-trash" aria-hidden="true"></i></span><div><h3>垃圾与安装包</h3><strong data-storage-value>--</strong><p data-storage-meta>下载残留、缩略图和回收站</p></div><button class="secondary-button" data-storage-action="clear-junk" type="button">清理垃圾</button></article>
+      </div>
+      <section class="storage-file-browser" aria-labelledby="storageFileBrowserTitle">
+        <div class="storage-file-browser-heading"><div><h3 id="storageFileBrowserTitle">文件浏览</h3><p>仅读取手机公共存储，不会删除或导出文件。</p></div><strong id="storageFileSummary">选择分类开始浏览</strong></div>
+        <div class="storage-file-tabs" role="tablist" aria-label="文件分类">
+          <button class="directory-tab active" data-storage-file-category="photos" type="button"><i class="ph ph-image" aria-hidden="true"></i><span>照片</span></button>
+          <button class="directory-tab" data-storage-file-category="videos" type="button"><i class="ph ph-video-camera" aria-hidden="true"></i><span>视频</span></button>
+          <button class="directory-tab" data-storage-file-category="downloads" type="button"><i class="ph ph-download-simple" aria-hidden="true"></i><span>下载</span></button>
+          <button class="directory-tab" data-storage-file-category="documents" type="button"><i class="ph ph-file-text" aria-hidden="true"></i><span>文档</span></button>
+        </div>
+        <div class="storage-file-toolbar">
+          <label class="storage-file-sort"><i class="ph ph-sort-ascending" aria-hidden="true"></i><select id="storageFileSort" aria-label="文件排序"><option value="size-desc">大小 从大到小</option><option value="size-asc">大小 从小到大</option><option value="time-desc">时间 最新优先</option><option value="time-asc">时间 最早优先</option><option value="name-asc">名称 A-Z</option><option value="name-desc">名称 Z-A</option></select></label>
+          <label class="storage-file-select-all"><input id="selectAllStorageFiles" type="checkbox" /><span>全选当前分类</span></label>
+          <strong id="selectedStorageFileCount">已选 0 项</strong>
+          <div class="storage-file-actions">
+            <button class="secondary-button" data-storage-file-action="export" type="button" disabled><i class="ph ph-export" aria-hidden="true"></i><span>导出选中</span></button>
+            <button class="secondary-button danger-outline" data-storage-file-action="preview-delete" type="button" disabled><i class="ph ph-eye" aria-hidden="true"></i><span>删除预演</span></button>
+          </div>
+        </div>
+        <div class="storage-file-message" id="storageFileMessage" role="status" aria-live="polite"></div>
+        <div class="storage-file-list" id="storageFileList" role="list" aria-label="手机文件列表"><div class="storage-file-empty">选择分类后读取文件列表</div></div>
+      </section>
+    </section>
+  </dialog>
+  <dialog class="action-dialog" id="actionDialog" aria-labelledby="actionDialogTitle">
+    <form id="actionDialogForm">
+      <div class="modal-heading"><div><h2 id="actionDialogTitle">操作参数</h2><p id="actionDialogDescription"></p></div><button class="icon-button" id="closeActionDialog" type="button" title="关闭" aria-label="关闭"><i class="ph ph-x" aria-hidden="true"></i></button></div>
+      <div class="action-dialog-fields" id="actionDialogFields"></div>
+      <div class="action-dialog-actions"><button class="secondary-button" id="cancelActionDialog" type="button">取消</button><button class="primary-button" type="submit"><i class="ph ph-play" aria-hidden="true"></i><span>继续执行</span></button></div>
+    </form>
+  </dialog>
+  <dialog class="task-center-dialog" id="taskCenterDialog" aria-labelledby="taskCenterTitle">
+    <div class="modal-heading"><div><h2 id="taskCenterTitle">任务执行中心</h2><p id="taskCenterSummary">当前没有正在执行的任务</p></div><button class="icon-button" id="closeTaskCenter" type="button" title="关闭" aria-label="关闭"><i class="ph ph-x" aria-hidden="true"></i></button></div>
+    <div class="task-center-current" id="taskCenterCurrent" data-state="idle">
+      <span class="task-center-state"><i class="ph ph-check-circle" aria-hidden="true"></i></span>
+      <div><strong id="currentTaskTitle">准备就绪</strong><p id="currentTaskDetail">等待执行操作</p></div>
+      <time id="currentTaskTime">--</time>
+    </div>
+    <div class="task-history-heading"><h3>最近任务</h3><button class="secondary-button" id="clearTaskHistory" type="button"><i class="ph ph-trash" aria-hidden="true"></i><span>清空记录</span></button></div>
+    <div class="task-history" id="taskHistory"><div class="task-history-empty">暂无任务记录</div></div>
+  </dialog>
+  <dialog class="risk-confirm-dialog" id="riskConfirmDialog" aria-labelledby="riskConfirmTitle">
+    <div class="modal-heading"><div><h2 id="riskConfirmTitle">确认执行危险操作</h2><p>请核对当前设备和操作目标</p></div><button class="icon-button" id="closeRiskConfirm" type="button" title="关闭" aria-label="关闭"><i class="ph ph-x" aria-hidden="true"></i></button></div>
+    <div class="risk-confirm-body">
+      <div class="risk-confirm-message"><i class="ph ph-warning" aria-hidden="true"></i><p id="riskConfirmMessage"></p></div>
+      <dl class="risk-confirm-details">
+        <div><dt>当前设备</dt><dd id="riskConfirmDevice">未连接</dd></div>
+        <div><dt>连接模式</dt><dd id="riskConfirmMode">未连接</dd></div>
+        <div><dt>操作目标</dt><dd id="riskConfirmTarget">-</dd></div>
+      </dl>
+    </div>
+    <div class="action-dialog-actions"><button class="secondary-button" id="cancelRiskConfirm" type="button">取消</button><button class="primary-button danger-button" id="acceptRiskConfirm" type="button"><i class="ph ph-warning" aria-hidden="true"></i><span>确认执行</span></button></div>
+  </dialog>
+  <dialog class="install-progress-dialog" id="installProgressDialog" aria-labelledby="installProgressTitle">
+    <div class="install-progress-icon" id="installProgressIcon" aria-hidden="true"><i class="ph ph-download-simple"></i></div>
+    <div class="install-progress-copy">
+      <h2 id="installProgressTitle">正在安装</h2>
+      <p id="installProgressMessage" role="status" aria-live="polite">正在准备安装，请稍候...</p>
+    </div>
+    <div class="install-progress-track" id="installProgressTrack" role="progressbar" aria-label="安装进度">
+      <span></span>
+    </div>
+    <button class="secondary-button install-progress-close" id="closeInstallProgress" type="button" hidden>关闭</button>
+  </dialog>
+  <script src="./actions.registry.js"></script>
+  <script src="./firmware-catalog.js"></script>
+  <script src="./renderer.js"></script>
+</body>
+</html>

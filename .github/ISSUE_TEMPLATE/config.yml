@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞
+    url: https://github.com/adb-gaoji/adb-gaoji-assistant/security/advisories/new
+    about: 请勿公开提交安全漏洞，改用私密漏洞报告（详见 SECURITY.md）
+  - name: 使用问题与讨论
+    url: https://github.com/adb-gaoji/adb-gaoji-assistant/discussions
+    about: 不确定是不是缺陷、或想讨论用法，请到 Discussions
+  - name: 贡献指南
+    url: https://github.com/adb-gaoji/adb-gaoji-assistant/blob/main/CONTRIBUTING.md
+    about: 提交代码前请先阅读贡献指南，特别是危险操作的相关要求

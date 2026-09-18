@@ -1,0 +1,82 @@
+{
+  "name": "adb-gaoji-assistant-next",
+  "version": "1.1.0",
+  "description": "ADB搞机助手 - Android ADB/Fastboot/Magisk desktop utility",
+  "main": "src/main.js",
+  "author": "ADB搞机助手 contributors",
+  "license": "MIT",
+  "type": "commonjs",
+  "keywords": [
+    "adb",
+    "fastboot",
+    "android",
+    "magisk",
+    "scrcpy",
+    "flash",
+    "rom",
+    "electron",
+    "windows"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "audit:actions": "node scripts/audit-actions.js",
+    "audit:danger": "node scripts/audit-dangerous-actions.js",
+    "audit:tasks": "node scripts/audit-task-flow.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/action_handlers.js && node --check src/app_package_query.js && node --check src/device_reboot.js && node --check src/firmware-catalog.js && node --check src/firmware_parser.js && node --check src/adb_parser.js && node --check src/actions.registry.js",
+    "test": "npm run check && node --test tests/*.test.js",
+    "ci": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci.ps1",
+    "dist": "npm test && electron-builder --win nsis",
+    "release:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
+    "audit:ui-state": "node scripts/audit-ui-state.js",
+    "audit:wireless-cast": "node scripts/audit-wireless-cast.js",
+    "audit:wireless-pair": "node scripts/audit-wireless-pair.js",
+    "audit:mirror-session": "node scripts/audit-mirror-session.js",
+    "audit:themes": "node scripts/audit-themes.js",
+    "audit:contrast": "electron scripts/audit-contrast.js"
+  },
+  "dependencies": {
+    "@phosphor-icons/web": "2.1.2"
+  },
+  "devDependencies": {
+    "electron": "41.2.1",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.codex.adbgaojiassistant",
+    "productName": "ADB搞机助手",
+    "artifactName": "ADB搞机助手_V${version}_安装包.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "!tests/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
+    "win": {
+      "icon": "resources/icons/app.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ADB搞机助手"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adb-gaoji/adb-gaoji-assistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adb-gaoji/adb-gaoji-assistant/issues"
+  },
+  "homepage": "https://github.com/adb-gaoji/adb-gaoji-assistant#readme"
+}

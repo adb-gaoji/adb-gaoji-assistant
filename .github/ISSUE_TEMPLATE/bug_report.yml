@@ -1,0 +1,139 @@
+name: 缺陷报告
+description: 报告一个可复现的问题
+title: '[缺陷] '
+labels: ['bug', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你帮忙改进 ADB搞机助手。
+
+        **提交前请先确认：**
+        - 已经搜索过现有 Issue，没有重复
+        - 使用的是[最新版本](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest)（旧版本的问题可能已修复）
+
+        > 如果是**安全漏洞**，请勿在此提交，改用
+        > [私密漏洞报告](https://github.com/adb-gaoji/adb-gaoji-assistant/security/advisories/new)（见 [SECURITY.md](../blob/main/SECURITY.md)）。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能域
+      description: 问题出现在哪个功能模块？
+      options:
+        - 设备诊断
+        - 应用管理
+        - 存储清理
+        - 无线与投屏
+        - Root 与面具
+        - 分区与镜像
+        - 固件刷机
+        - 救砖修复
+        - 个性化（开机动画 / 分辨率 / DPI）
+        - 智能辅助
+        - 界面与主题
+        - 安装与启动
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 在应用标题栏可以看到，例如 `ADB搞机助手 V1.1.0`
+      placeholder: 'ADB搞机助手 V1.1.0'
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 设备信息
+      description: 机型 + 系统版本 + Android 版本
+      placeholder: '小米 13 / HyperOS 2.0 / Android 15'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式
+      options:
+        - USB（ADB 系统模式）
+        - USB（Fastboot 模式）
+        - 无线 ADB
+        - 未连接设备
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 发生了什么？你期望发生什么？
+      placeholder: |
+        实际结果：点击「固件预览」后提示解析失败。
+
+        期望结果：应该列出刷机命令列表。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 越具体越好，我们需要能重现它
+      placeholder: |
+        1. 解压官方固件包
+        2. 打开「固件刷机」页面
+        3. 点击「选择刷机包」，选中 flashfile.xml
+        4. 点击「固件预览」
+        5. 出现报错
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        日志位于 `%APPDATA%\adb-gaoji-assistant-next\`，
+        崩溃时会额外生成 `crash.log`。
+
+        **粘贴前请先删除设备序列号、账号等隐私信息。**
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或录屏
+      description: 界面问题请务必附上截图
+    validations:
+      required: false
+
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: 是否稳定复现？
+      options:
+        - 每次都能复现
+        - 偶尔出现
+        - 只出现过一次
+        - 还没试过重复操作
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我已确认使用的是最新版本
+          required: true
+        - label: 我已从日志和截图中删除设备序列号等隐私信息
+          required: true
+        - label: 如果这涉及刷机/解锁/清数据，我已确认设备当前可正常进入系统或 Fastboot
+          required: false

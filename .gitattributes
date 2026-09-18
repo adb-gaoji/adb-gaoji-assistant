@@ -1,0 +1,37 @@
+# 统一换行符与文本处理方式，避免跨平台协作时出现整文件 diff。
+
+# 默认：自动识别文本，检出时使用平台换行符
+* text=auto
+
+# ---------- 源码 ----------
+*.js      text eol=lf
+*.json    text eol=lf
+*.html    text eol=lf
+*.css     text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+
+# PowerShell 脚本保留 CRLF：Windows PowerShell 5.1 对 LF 换行的
+# 含 BOM 脚本处理不稳定，且这些脚本只在 Windows 上运行。
+*.ps1     text eol=crlf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# ---------- 二进制 ----------
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.exe     binary
+*.dll     binary
+*.zip     binary
+*.7z      binary
+*.apk     binary
+*.img     binary
+*.bin     binary
+
+# ---------- 语言统计 ----------
+# 锁文件不计入仓库语言构成
+package-lock.json  linguist-generated=true -diff

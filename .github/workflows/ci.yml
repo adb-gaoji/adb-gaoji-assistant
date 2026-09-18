@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: ['main', 'master']
+  pull_request:
+    branches: ['main', 'master']
+  workflow_dispatch:
+
+# 同一分支的新推送取消旧的进行中任务
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------- 语法与测试
+  test:
+    name: 语法与单元测试
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 语法检查
+        run: npm run check
+
+      - name: 单元与契约测试
+        run: npm test
+
+  # ---------------------------------------------------------------- 生产依赖审计
+  dependencies:
+    name: 生产依赖安全审计
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 只审计生产依赖：开发依赖（electron 工具链）的漏洞不进入发布产物，
+      # 且修复往往需要破坏性升级，因此不作为 CI 阻断条件。
+      - name: 审计生产依赖
+        run: npm audit --omit=dev --audit-level=high
+
+  # ---------------------------------------------------------------- 契约审计
+  # 后台审计脚本不启动 Electron 窗口即可校验跨层契约。
+  # 退出码约定：0 通过 / 1 已登记的 P1 缺口 / 2 P0 必须修。
+  # 资源类审计依赖约 894 MB 的 resources/（不纳入版本控制），
+  # 因此 CI 中跳过，仅在本地 npm run ci 中执行。
+  audits:
+    name: 契约审计
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        audit:
+          - audit:actions
+          - audit:danger
+          - audit:ui-state
+          - audit:wireless-cast
+          - audit:wireless-pair
+          - audit:mirror-session
+          - audit:themes
+          - audit:contrast
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 审计用退出码表达严重度：2 = P0 必须修，1 = 已登记的 P1 缺口。
+      # task-flow（audit:tasks）的 P1 缺口不阻断，因此不列入本矩阵。
+      # contrast（audit:contrast）跑在 Electron 里，用离屏窗口不弹窗；
+      # 它需要 GPU 无关的样式计算，在 windows-latest 上可正常跑。
+      - name: 运行 ${{ matrix.audit }}
+        shell: pwsh
+        run: |
+          npm run ${{ matrix.audit }}
+          $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            Write-Host "通过"
+            exit 0
+          }
+          if ($code -eq 1) {
+            Write-Host "::warning::${{ matrix.audit }} 报告了已登记的 P1 缺口（不阻断）"
+            exit 0
+          }
+          Write-Host "::error::${{ matrix.audit }} 报告了 P0 必须修的问题（退出码 $code）"
+          exit 1
+
+  # ---------------------------------------------------------------- 元数据校验
+  metadata:
+    name: 项目元数据校验
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # package.json 与 package-lock.json 必须同步，且不能带 BOM
+      # （Node 的 require 遇到 BOM 会抛 SyntaxError）。
+      - name: 校验 package.json 与 lock 同步
+        run: |
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          let bad = false;
+          for (const file of ['package.json', 'package-lock.json']) {
+            const buf = fs.readFileSync(file);
+            if (buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) {
+              console.error('::error::' + file + ' 含有 UTF-8 BOM，Node 的 require 会失败');
+              bad = true;
+            }
+          }
+          if (pkg.version !== lock.version) {
+            console.error('::error::版本不一致: package.json=' + pkg.version + ' lock=' + lock.version);
+            bad = true;
+          }
+          if (pkg.version !== lock.packages[''].version) {
+            console.error('::error::版本不一致: lock.packages[\"\"]=' + lock.packages[''].version);
+            bad = true;
+          }
+          if (bad) process.exit(1);
+          console.log('元数据校验通过，版本 ' + pkg.version);
+          "
+
+      # 版本升级说明是发布流程的一部分，缺少当前版本段落会让用户看不到升级内容。
+      - name: 校验 VERSIONS.md 含当前版本
+        run: |
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const notes = fs.readFileSync('VERSIONS.md', 'utf8');
+          const needle = '【' + pkg.version + '】';
+          const re = new RegExp('【\\\\s*' + pkg.version.replace(/\./g, '\\\\.') + '\\\\s*】');
+          if (!re.test(notes)) {
+            console.error('::error::VERSIONS.md 中缺少当前版本 V' + pkg.version + ' 的段落');
+            process.exit(1);
+          }
+          console.log('VERSIONS.md 含 V' + pkg.version);
+          "

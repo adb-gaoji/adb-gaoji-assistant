@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>ADB搞机助手 · 主题方案对比</title>
+<link rel="stylesheet" href="../node_modules/@phosphor-icons/web/src/regular/style.css" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    background: #0d1117; color: #e6edf3; min-height: 100vh;
+    display: flex; flex-direction: column;
+  }
+
+  /* ---------------- 顶部控制条 ---------------- */
+  .bar {
+    display: flex; align-items: center; gap: 22px;
+    padding: 15px 26px; background: #161b22; border-bottom: 1px solid #21262d;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .bar h1 { font-size: 15px; font-weight: 650; }
+  .bar .sub { font-size: 12px; color: #8b949e; }
+
+  .modes { margin-left: auto; display: flex; gap: 7px; }
+  .mode {
+    font-size: 12px; padding: 6px 14px; border-radius: 7px; cursor: pointer;
+    background: #21262d; color: #c9d1d9; border: 1px solid transparent; font-family: inherit;
+  }
+  .mode:hover { background: #30363d; }
+  .mode.on { background: #1f6feb; color: #fff; border-color: #388bfd; font-weight: 600; }
+
+  /* ---------------- 舞台 ---------------- */
+  .stage { flex: 1; padding: 22px 26px 30px; }
+
+  .grid {
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+  }
+
+  .scheme { border-radius: 13px; overflow: hidden; border: 1px solid #21262d; transition: opacity .2s; }
+  .scheme.hide { display: none; }
+
+  .scheme-head {
+    padding: 10px 14px; display: flex; align-items: center; gap: 9px;
+    background: #161b22; border-bottom: 1px solid #21262d; font-size: 12.5px;
+  }
+  .scheme-head .idx {
+    width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+    font-size: 11px; font-weight: 700; background: #21262d; color: #8b949e;
+  }
+  .scheme-head .name { font-weight: 620; }
+  .scheme-head .tag { margin-left: auto; font-size: 10.5px; padding: 3px 9px; border-radius: 999px; background: #21262d; color: #8b949e; }
+  .scheme-desc { padding: 9px 14px; font-size: 11.5px; color: #8b949e; background: #0d1117; line-height: 1.65; }
+
+  /* ---------------- 预览组件 ---------------- */
+  .mock {
+    display: grid; grid-template-columns: 176px minmax(0, 1fr);
+    min-height: 372px; background: var(--bg); color: var(--text); font-size: 12px;
+  }
+  .mock-side { background: var(--sidebar); padding: 13px 10px; display: flex; flex-direction: column; gap: 3px; }
+  .mock-brand { display: flex; align-items: center; gap: 9px; padding: 5px 8px 15px; }
+  .mock-brand .dot {
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--accent); color: var(--accent-on, #fff); font-size: 14px;
+  }
+  .mock-brand b { font-size: 12.5px; color: var(--sidebar-text); font-weight: 620; }
+  .mock-brand span { display: block; font-size: 9.5px; color: var(--sidebar-muted); margin-top: 1px; }
+  .mock-nav {
+    display: flex; align-items: center; gap: 9px; padding: 7.5px 10px; border-radius: 7px;
+    color: var(--sidebar-muted); font-size: 11.5px;
+  }
+  .mock-nav i { font-size: 14px; }
+  .mock-nav.active {
+    background: var(--sidebar-active-bg); color: var(--sidebar-active-text);
+    font-weight: 620; box-shadow: inset 2.5px 0 0 var(--accent);
+  }
+  .mock-nav.sec { margin-top: 8px; font-size: 9.5px; opacity: .55; padding: 3px 10px; }
+
+  .mock-main { padding: 16px; display: flex; flex-direction: column; gap: 11px; overflow: hidden; }
+  .mock-title { display: flex; align-items: center; gap: 9px; }
+  .mock-title h2 { font-size: 15px; font-weight: 630; }
+  .mock-title .pill {
+    margin-left: auto; font-size: 9.5px; padding: 3px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); font-weight: 620;
+  }
+  .card {
+    background: var(--surface-raised); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 12px 13px; box-shadow: var(--shadow);
+  }
+  .card.hero {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--hero-bg, var(--surface-raised)); border-color: var(--hero-line, var(--line));
+  }
+  .card.hero .avatar {
+    width: 43px; height: 43px; flex: 0 0 43px; border-radius: var(--radius);
+    display: grid; place-items: center; font-size: 21px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .card.hero .who { flex: 1; min-width: 0; }
+  .card.hero .who b { font-size: 14px; font-weight: 630; display: block; }
+  .card.hero .who span { font-size: 10.5px; color: var(--text-secondary); }
+  .badge {
+    font-size: 9.5px; padding: 3px 8px; border-radius: 6px; font-weight: 620;
+    background: var(--success-soft); color: var(--success);
+  }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 11px; }
+  .stat .k { font-size: 9.5px; color: var(--text-muted); margin-bottom: 3px; }
+  .stat .v { font-size: 14.5px; font-weight: 630; letter-spacing: -.2px; }
+  .stat .v.accent { color: var(--accent); }
+  .actions { display: flex; gap: 7px; flex-wrap: wrap; }
+  .btn {
+    font-size: 11px; padding: 6.5px 13px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line-strong); background: var(--surface-raised);
+    color: var(--text); font-weight: 550;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-on, #fff); border-color: var(--accent); font-weight: 620; }
+  .btn.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+  .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+  .table th {
+    text-align: left; font-weight: 620; font-size: 10px; color: var(--text-muted);
+    padding: 5.5px 9px; background: var(--surface-subtle); border-bottom: 1px solid var(--line);
+  }
+  .table th:first-child { border-radius: var(--radius-sm) 0 0 0; }
+  .table th:last-child { border-radius: 0 var(--radius-sm) 0 0; }
+  .table td { padding: 6.5px 9px; border-bottom: 1px solid var(--line); }
+  .table tr:last-child td { border-bottom: 0; }
+  .table .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; color: var(--text-secondary); }
+
+  /* ================= 1 深空石墨 ================= */
+  .s1 {
+    --bg:#11171c; --surface:#171e24; --surface-raised:#1e272e; --surface-subtle:#192229;
+    --sidebar:#0c1216; --sidebar-text:#edf1f3; --sidebar-muted:rgba(237,241,243,.62);
+    --sidebar-active-bg:rgba(85,197,165,.15); --sidebar-active-text:#fff;
+    --text:#edf1f3; --text-secondary:#bdc6ce; --text-muted:#929da7;
+    --line:#343b42; --line-strong:#4a535b;
+    --accent:#55c5a5; --accent-soft:#173f35; --accent-on:#06231c;
+    --danger:#ff8c84; --danger-soft:#4a2425;
+    --success:#63c7a4; --success-soft:#173f35;
+    --radius:8px; --radius-sm:6px; --shadow:0 10px 28px rgba(0,0,0,.24);
+  }
+
+  /* ================= 2 午夜靛蓝 ================= */
+  .s2 {
+    --bg:#0b1020; --surface:#101731; --surface-raised:#151e3d; --surface-subtle:#0e1530;
+    --sidebar:#070b18; --sidebar-text:#eef2ff; --sidebar-muted:rgba(238,242,255,.58);
+    --sidebar-active-bg:linear-gradient(90deg,rgba(99,102,241,.26),rgba(99,102,241,.05));
+    --sidebar-active-text:#fff;
+    --text:#eef2ff; --text-secondary:#a9b4d8; --text-muted:#7b88b4;
+    --line:#232d54; --line-strong:#35426f;
+    --accent:#7c8cff; --accent-soft:#1b2350; --accent-on:#080d20;
+    --danger:#ff8098; --danger-soft:#3d1b2c;
+    --success:#5fd0b0; --success-soft:#10352e;
+    --radius:10px; --radius-sm:7px; --shadow:0 12px 32px rgba(0,0,0,.42);
+    --hero-bg:linear-gradient(135deg,#182352,#131b3c); --hero-line:#2c3a6e;
+  }
+
+  /* ================= 3 暖云米白 ================= */
+  .s3 {
+    --bg:#f6f3ee; --surface:#faf8f4; --surface-raised:#ffffff; --surface-subtle:#f3efe8;
+    --sidebar:#2a2521; --sidebar-text:#f7f3ec; --sidebar-muted:rgba(247,243,236,.56);
+    --sidebar-active-bg:rgba(217,119,6,.17); --sidebar-active-text:#fff;
+    --text:#241f1a; --text-secondary:#5d554b; --text-muted:#8b8175;
+    --line:#e5ded3; --line-strong:#d3c9ba;
+    --accent:#b45309; --accent-soft:#fdf0dd; --accent-on:#fff;
+    --danger:#b3261e; --danger-soft:#fdeceb;
+    --success:#15803d; --success-soft:#e7f6ec;
+    --radius:9px; --radius-sm:6px; --shadow:0 8px 26px rgba(74,60,40,.09);
+    --hero-bg:linear-gradient(135deg,#fffdf9,#fdf6ea); --hero-line:#ecdfc9;
+  }
+
+  /* ================= 4 墨玉青瓷 ================= */
+  .s4 {
+    --bg:#eef2f0; --surface:#f4f7f5; --surface-raised:#ffffff; --surface-subtle:#e9efec;
+    --sidebar:#1c2b28; --sidebar-text:#eef4f1; --sidebar-muted:rgba(238,244,241,.55);
+    --sidebar-active-bg:rgba(45,138,116,.2); --sidebar-active-text:#fff;
+    --text:#16241f; --text-secondary:#4a5c56; --text-muted:#74857f;
+    --line:#d8e2dd; --line-strong:#bccbc4;
+    --accent:#2d8a74; --accent-soft:#dff2ec; --accent-on:#fff;
+    --danger:#b02a26; --danger-soft:#fcebe9;
+    --success:#2d8a74; --success-soft:#dff2ec;
+    --radius:7px; --radius-sm:5px; --shadow:0 6px 22px rgba(22,44,38,.08);
+    --hero-bg:linear-gradient(135deg,#ffffff,#eef7f3); --hero-line:#cfe6dd;
+  }
+
+  /* ================= 5 曜石霓虹 ================= */
+  .s5 {
+    --bg:#08080c; --surface:#0e0e14; --surface-raised:#14141d; --surface-subtle:#101018;
+    --sidebar:#050508; --sidebar-text:#f0f0f5; --sidebar-muted:rgba(240,240,245,.5);
+    --sidebar-active-bg:linear-gradient(90deg,rgba(34,211,238,.22),rgba(168,85,247,.12));
+    --sidebar-active-text:#fff;
+    --text:#f0f0f5; --text-secondary:#a5a5b8; --text-muted:#74748c;
+    --line:#22222e; --line-strong:#34344a;
+    --accent:#22d3ee; --accent-soft:#0d3a44; --accent-on:#04191d;
+    --danger:#ff6b81; --danger-soft:#3a1520;
+    --success:#34d399; --success-soft:#0b3a2c;
+    --radius:11px; --radius-sm:8px; --shadow:0 14px 38px rgba(0,0,0,.6);
+    --hero-bg:linear-gradient(135deg,#101826,#16102a); --hero-line:#2b2b45;
+  }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div>
+    <h1>ADB搞机助手 · 界面风格方案</h1>
+    <div class="sub">点右侧可只看某一种 · 选定后即可写入程序主题</div>
+  </div>
+  <div class="modes" id="modes">
+    <button class="mode on" data-target="all">全部</button>
+    <button class="mode" data-target="1">1 深空石墨</button>
+    <button class="mode" data-target="2">2 午夜靛蓝</button>
+    <button class="mode" data-target="3">3 暖云米白</button>
+    <button class="mode" data-target="4">4 墨玉青瓷</button>
+    <button class="mode" data-target="5">5 曜石霓虹</button>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+  const SCHEMES = [
+    { id: 1, name: '深空石墨', tag: '当前深色 · 基准',
+      desc: '中性石墨灰底 + 薄荷绿强调。平衡耐看，长时间使用不刺眼，是现有深色主题。' },
+    { id: 2, name: '午夜靛蓝', tag: '冷冽克制',
+      desc: '深海军蓝底 + 靛蓝强调，圆角与投影更大。参照专业开发工具的克制感，深色里最"贵"的一套。' },
+    { id: 3, name: '暖云米白', tag: '浅色高级感',
+      desc: '米白纸面 + 深棕侧栏 + 琥珀点睛。纸质感强，不是常见的"白底蓝按钮"，适合白天使用。' },
+    { id: 4, name: '墨玉青瓷', tag: '中式雅致',
+      desc: '低饱和灰绿 + 玉色强调，圆角最小。安静稳重，接近国产专业工具的克制设计语言。' },
+    { id: 5, name: '曜石霓虹', tag: '科技感最强',
+      desc: '纯黑底 + 青色强调 + 紫蓝渐变侧栏，圆角最大。视觉冲击最强，突出"工具"属性。' }
+  ];
+
+  const NAV = [
+    ['house', '设备总览', true], ['shield-check', 'Root 工具'], ['hard-drives', '分区提取'],
+    ['sec', '系统'], ['android-logo', '应用管理'], ['google-logo', '谷歌服务']
+  ];
+
+  function navHtml() {
+    return NAV.map(([icon, label, active]) => {
+      if (icon === 'sec') return `<div class="mock-nav sec">${label}</div>`;
+      return `<div class="mock-nav${active ? ' active' : ''}"><i class="ph ph-${icon}"></i>${label}</div>`;
+    }).join('');
+  }
+
+  const MAIN = `
+    <div class="mock-title"><h2>当前设备</h2><span class="pill">已连接</span></div>
+    <div class="card hero">
+      <span class="avatar"><i class="ph ph-device-mobile"></i></span>
+      <div class="who"><b>XT2335-3</b><span>Motorola · Android 14</span></div>
+      <span class="badge">已 Root</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="k">电池</div><div class="v accent">82%</div></div>
+      <div class="stat"><div class="k">存储</div><div class="v">128 GB</div></div>
+      <div class="stat"><div class="k">已用</div><div class="v">64%</div></div>
+    </div>
+    <div class="actions">
+      <span class="btn primary">一键诊断</span><span class="btn">刷新</span><span class="btn danger">清除数据</span>
+    </div>
+    <table class="table">
+      <tr><th>分区</th><th>大小</th><th>状态</th></tr>
+      <tr><td class="mono">boot_a</td><td class="mono">96 MB</td><td>已备份</td></tr>
+      <tr><td class="mono">init_boot</td><td class="mono">96 MB</td><td>未备份</td></tr>
+    </table>`;
+
+  document.getElementById('grid').innerHTML = SCHEMES.map((s) => `
+    <div class="scheme" data-id="${s.id}">
+      <div class="scheme-head">
+        <span class="idx">${s.id}</span><span class="name">${s.name}</span><span class="tag">${s.tag}</span>
+      </div>
+      <div class="scheme-desc">${s.desc}</div>
+      <div class="mock s${s.id}">
+        <div class="mock-side">
+          <div class="mock-brand">
+            <span class="dot"><i class="ph ph-device-mobile"></i></span>
+            <div><b>搞机助手</b><span>V1.0.0</span></div>
+          </div>
+          ${navHtml()}
+        </div>
+        <div class="mock-main">${MAIN}</div>
+      </div>
+    </div>`).join('');
+
+  document.querySelectorAll('.mode').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mode').forEach((b) => b.classList.toggle('on', b === btn));
+      const target = btn.dataset.target;
+      document.querySelectorAll('.scheme').forEach((el) => {
+        el.classList.toggle('hide', target !== 'all' && el.dataset.id !== target);
+      });
+    });
+  });
+</script>
+</body>
+</html>

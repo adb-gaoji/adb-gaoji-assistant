@@ -1,0 +1,28 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# PowerShell 脚本保留 CRLF（Windows PowerShell 5.1 兼容）
+[*.ps1]
+end_of_line = crlf
+
+[*.{bat,cmd}]
+end_of_line = crlf
+
+# JSON 不允许尾随空格影响解析器，但保持换行规范
+[*.json]
+insert_final_newline = true
+
+# Markdown 允许行尾双空格（用于换行）
+[*.md]
+trim_trailing_whitespace = false
+
+# YAML 缩进必须稳定
+[*.{yml,yaml}]
+indent_size = 2
