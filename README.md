@@ -484,7 +484,7 @@ Electron 三层结构，主进程与渲染进程通过 IPC 通信：
 
 ```powershell
 npm run check    # 语法检查（node --check 全部源文件）
-npm test         # 语法检查 + 54 项单元/契约测试
+npm test         # 语法检查 + 55 项单元/契约测试
 npm run ci       # 完整 CI：语法 → 测试 → 依赖审计 → 9 项审计 → 资源校验
 ```
 
@@ -544,7 +544,7 @@ scripts/
   release.ps1             发布流程
   verify-resources.ps1    资源完整性校验
   audit-*.js              10 项契约审计
-tests/                    单元与契约测试（54 项）
+tests/                    单元与契约测试（55 项）
 design/                   界面风格定义、对比页、应用截图
 resources/                运行时资源（不纳入版本控制，见下）
 ```
