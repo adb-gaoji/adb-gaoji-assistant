@@ -369,6 +369,119 @@ function appendLog(text) {
 
 window.gaoji.onLog(appendLog);
 
+/**
+ * 刷机进度显示。
+ *
+ * 刷机时用户的注意力在「固件刷机」页面上，而详细输出此前只进底部日志面板，
+ * 要手动切过去并滚动才能看到，过程等于不可见。这里把主进程推来的
+ * flash-progress 事件渲染成页面内的进度条 + 实时输出。
+ */
+const flashView = {
+  active: false,
+  total: 0,
+  succeeded: 0,
+  failed: 0,
+  startedAt: 0
+};
+
+function resetFlashView(total, serial) {
+  flashView.active = true;
+  flashView.total = total;
+  flashView.succeeded = 0;
+  flashView.failed = 0;
+  flashView.startedAt = Date.now();
+
+  const panel = $('flashProgress');
+  if (panel) panel.hidden = false;
+  setText('flashProgressLabel', `准备刷写（设备 ${serial || '-'}）`, '准备刷写');
+  setText('flashProgressCount', `0/${total}`, `0/${total}`);
+  setText('flashProgressStats', '');
+  updateFlashBar(0, total);
+  // 清掉上一次的预览内容，让用户看到的是本次刷机的实时输出
+  const preview = $('firmwarePreview');
+  if (preview) preview.textContent = '';
+}
+
+function updateFlashBar(done, total) {
+  const bar = $('flashProgressBar');
+  const fill = $('flashProgressFill');
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  if (bar) bar.setAttribute('aria-valuenow', String(percent));
+  if (fill) fill.style.width = `${percent}%`;
+}
+
+function appendFlashOutput(text) {
+  const preview = $('firmwarePreview');
+  if (!preview) return;
+  preview.textContent += text;
+  // 输出很长时自动跟到底部，用户不需要手动滚
+  preview.scrollTop = preview.scrollHeight;
+}
+
+function handleFlashProgress(event) {
+  if (!event || typeof event !== 'object') return;
+  const total = Number(event.total) || flashView.total || 0;
+
+  switch (event.phase) {
+    case 'start':
+      resetFlashView(total, event.serial);
+      break;
+
+    case 'step': {
+      if (!flashView.active) resetFlashView(total, '');
+      const index = Number(event.index) || 0;
+      setText('flashProgressLabel', `正在执行：${event.label || ''}`, '正在执行');
+      setText('flashProgressCount', `${index + 1}/${total}`, `${index + 1}/${total}`);
+      // 进度条与计数保持一致：计数显示"正在做第 N 个"，
+      // 进度条也走 N/total，否则用户看到 1/4 却只有 0% 会以为卡住了。
+      updateFlashBar(index + 1, total);
+      break;
+    }
+
+    case 'waiting':
+      setText('flashProgressLabel', '等待设备重新进入 Fastboot…', '等待设备');
+      break;
+
+    case 'step-failed':
+      flashView.failed += 1;
+      setText('flashProgressLabel', `失败：${event.label || ''}（${event.reason || ''}）`, '执行失败');
+      break;
+
+    case 'output':
+      appendFlashOutput(event.text || '');
+      break;
+
+    case 'done': {
+      const summary = event.summary || {};
+      flashView.active = false;
+      const done = Number(summary.total) || total;
+      setText('flashProgressCount', `${done}/${done}`, `${done}/${done}`);
+      updateFlashBar(done, done);
+      const seconds = summary.durationMs ? (summary.durationMs / 1000).toFixed(1) : '-';
+      const parts = [
+        `成功 ${summary.succeeded ?? 0}`,
+        `失败 ${summary.failed ?? 0}`
+      ];
+      if (summary.skippedErase) parts.push(`跳过 erase ${summary.skippedErase}`);
+      parts.push(`用时 ${seconds}s`);
+      setText('flashProgressStats', parts.join(' · '), '');
+      setText(
+        'flashProgressLabel',
+        event.ok ? '刷机完成' : (summary.stoppedAt ? `已在第 ${summary.stoppedAt} 步中止` : '刷机未完成'),
+        '刷机结束'
+      );
+      // 结果行也写进输出区，便于复制留档
+      appendFlashOutput(`\n===== ${event.ok ? '刷机完成' : '刷机未完成'}：${parts.join('，')} =====\n`);
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+if (window.gaoji.onFlashProgress) window.gaoji.onFlashProgress(handleFlashProgress);
+
 function setText(id, value, fallback = '-') {
   $(id).textContent = value || fallback;
 }

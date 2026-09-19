@@ -7,6 +7,7 @@ const { createActionHandlers, shellArg } = require('./action_handlers');
 const { createDeviceRebooter } = require('./device_reboot');
 const { DANGEROUS_ACTIONS: DANGEROUS_ACTION_LIST } = require('./actions.registry');
 const { resolveFlashTarget } = require('./slot_resolver');
+const flashRunner = require('./flash_runner');
 const { findFirmwareXml, parseFirmwareXml, firmwareReport } = require('./firmware_parser');
 const { lines, parseAdbDevices, parseFastbootDevices } = require('./adb_parser');
 
@@ -119,8 +120,16 @@ function runProcess(file, args = [], options = {}) {
       stderr += error.message;
       finish(9009);
     });
-    child.on('close', (code) => {
-      finish(code ?? 0);
+    child.on('close', (code, signal) => {
+      // code 为 null 表示进程被信号终止，而不是"正常退出且退出码为 0"。
+      // 此前写成 `code ?? 0`，会把被杀死（例如刷机中途 USB 断开导致
+      // fastboot 被终止）误判为成功——用户看到"刷机完成"，实际只刷了一半。
+      if (code === null) {
+        stderr += `\n进程被终止${signal ? `（信号 ${signal}）` : ''}，未能正常结束。`;
+        finish(9009);
+        return;
+      }
+      finish(code);
     });
   });
 }
@@ -131,6 +140,29 @@ async function adb(args = [], options = {}) {
 
 async function fastboot(args = [], options = {}) {
   return runProcess(getToolPath('fastboot.exe'), args, options);
+}
+
+/**
+ * 等待目标设备重新出现在 fastboot 列表里。
+ *
+ * `fastboot reboot-bootloader` 之后设备会重启回 fastboot，中间有十几秒
+ * 完全不可用。不等它回来就发下一条命令，必然得到 `Device not found` ——
+ * 这是"固件刷机有时中途失败"最常见的原因之一。
+ *
+ * @returns {boolean} 是否在超时前等到设备
+ */
+async function waitForFastbootDevice(serial, timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs;
+  // 先等一小会儿：命令刚发出时设备还没开始重启，
+  // 立刻查询会读到"设备仍在"的旧状态，等于没等。
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  while (Date.now() < deadline) {
+    const result = await fastboot(['devices'], { timeoutMs: 15000 });
+    const found = lines(result.stdout).some((line) => line.split(/\s+/)[0] === serial);
+    if (found) return true;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  return false;
 }
 
 async function getAdbValue(command) {
@@ -566,19 +598,172 @@ async function dispatchAction(action, payload = {}) {
       const targetSerial = String(payload.serial || '').trim() || deviceLines[0].split(/\s+/)[0];
       const targetMatch = deviceLines.find((line) => line.split(/\s+/)[0] === targetSerial);
       if (!targetMatch) return { code: 2, stdout: '', stderr: `未在 Fastboot 设备列表中找到目标设备 ${targetSerial}，请刷新后重试。` };
-      const fastbootArgs = (command) => ['-s', targetSerial, ...command.args];
-      sendLog(`\n[固件刷机] 目标设备：${targetSerial}\n[固件刷机] 开始执行 ${parsed.commands.length} 条 Fastboot 命令：${parsed.xmlPath}\n`);
-      for (let index = 0; index < parsed.commands.length; index += 1) {
-        const command = parsed.commands[index];
-        sendLog(`[${index + 1}/${parsed.commands.length}] fastboot ${command.label}\n`);
-        const result = await fastboot(fastbootArgs(command), { log: sendLog });
-        if (result.code !== 0) {
-          sendLog(`[固件刷机] 第 ${index + 1} 步失败，已停止后续命令。\n`);
-          return { code: result.code, stdout: result.stdout, stderr: result.stderr || `第 ${index + 1} 步失败` };
+
+      const total = parsed.commands.length;
+      const startedAt = Date.now();
+
+      // 刷机过程需要同时送到两个地方：
+      //   1) 底部日志面板（sendLog）—— 与其它操作统一，便于复制导出
+      //   2) 刷机页面的进度区（flash-progress）—— 刷机时用户盯着的就是这个页面
+      // 后者用结构化事件而不是让前端解析字符串，避免日志格式一改前端就失联。
+      const sendFlashProgress = (payload) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('flash-progress', payload);
         }
+      };
+      // fastboot 的输出是碎片化的（还带 \r 进度回显），逐条发事件会打爆 IPC，
+      // 这里累积 150ms 合并发一次。
+      let flashBuffer = '';
+      let flashTimer = null;
+      const flushFlashOutput = () => {
+        if (flashTimer) { clearTimeout(flashTimer); flashTimer = null; }
+        if (!flashBuffer) return;
+        sendFlashProgress({ phase: 'output', text: flashBuffer });
+        flashBuffer = '';
+      };
+      const flashLog = (text) => {
+        sendLog(text);
+        flashBuffer += text;
+        if (!flashTimer) flashTimer = setTimeout(flushFlashOutput, 150);
+      };
+
+      sendFlashProgress({ phase: 'start', total, serial: targetSerial, xmlPath: parsed.xmlPath });
+      flashLog(`\n[固件刷机] 目标设备：${targetSerial}\n`);
+      flashLog(`[固件刷机] 脚本：${parsed.xmlPath}\n`);
+      flashLog(`[固件刷机] 共 ${total} 条命令${parsed.skipped.length ? `（另有 ${parsed.skipped.length} 条 erase 未执行：未勾选允许清除数据）` : ''}\n`);
+
+      const failed = [];
+      let succeeded = 0;
+      let stoppedAt = 0;
+      let leftFastboot = false;
+
+      for (let index = 0; index < total; index += 1) {
+        const command = parsed.commands[index];
+        const label = flashRunner.describeCommand(command.args);
+        const step = flashRunner.progressLine(index, total, command.args);
+        sendFlashProgress({ phase: 'step', index, total, label });
+        flashLog(`\n${step}\n`);
+
+        // 设备已离开 fastboot（前面的 reboot 生效），后续命令必然失败，
+        // 明确跳过并说明，而不是发一堆 Device not found 让用户困惑。
+        if (leftFastboot) {
+          flashLog('      设备已重启离开 Fastboot，跳过该命令。\n');
+          continue;
+        }
+
+        // 镜像体积决定超时：super.img 这类几 GB 的分区需要更长时间
+        let fileSizeBytes = 0;
+        if (command.file) {
+          try { fileSizeBytes = fs.statSync(command.file).size; } catch (error) { fileSizeBytes = 0; }
+        }
+        const timeoutMs = flashRunner.computeTimeout(command.args, { fileSizeBytes });
+
+        // 传输层抖动（USB 接触不良、线材差）导致的失败重试一次；
+        // 分区名错、镜像缺失这类重试无用，直接判定失败。
+        const maxAttempts = 2;
+        let attempt = 0;
+        let outcome = null;
+        let result = null;
+        while (attempt < maxAttempts) {
+          attempt += 1;
+          const stepStart = Date.now();
+          result = await fastboot(['-s', targetSerial, ...command.args], { log: flashLog, timeoutMs });
+          const elapsed = ((Date.now() - stepStart) / 1000).toFixed(1);
+          outcome = flashRunner.analyzeResult(command.args, result);
+
+          if (outcome.ok) {
+            flashLog(`[刷机 ${index + 1}/${total}] 完成（${elapsed}s）\n`);
+            break;
+          }
+          if (outcome.retryable && attempt < maxAttempts) {
+            flashLog(`[刷机 ${index + 1}/${total}] ${outcome.reason}\n`);
+            flashLog(`      传输中断，3 秒后重试（第 ${attempt + 1} 次尝试）\n`);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            continue;
+          }
+          flashLog(`[刷机 ${index + 1}/${total}] 失败（${elapsed}s）：${outcome.reason}\n`);
+          break;
+        }
+
+        if (!outcome.ok) {
+          failed.push({ index: index + 1, label, reason: outcome.reason });
+          sendFlashProgress({ phase: 'step-failed', index, total, label, reason: outcome.reason });
+          if (outcome.fatal) {
+            stoppedAt = index + 1;
+            flashLog(`\n[固件刷机] 已在第 ${index + 1} 步停止，未继续执行后续命令。\n`);
+            flashLog('      继续执行可能造成分区与启动槽不一致，因此在此中止。\n');
+            break;
+          }
+          // getvar / reboot 类失败不阻断：只记下来继续
+          flashLog('      该命令不影响刷机结果，继续执行。\n');
+          continue;
+        }
+
+        succeeded += 1;
+
+        // reboot-bootloader 之后设备要十几秒才回到 fastboot，
+        // 必须等它回来再发下一条，否则后续全部 Device not found。
+        if (flashRunner.needsDeviceWait(command.args)) {
+          flashLog('      等待设备重新进入 Fastboot…\n');
+          sendFlashProgress({ phase: 'waiting', index, total });
+          const back = await waitForFastbootDevice(targetSerial, 90000);
+          if (!back) {
+            failed.push({ index: index + 1, label: '等待设备重连', reason: '设备未在 90 秒内重新出现在 Fastboot 列表' });
+            stoppedAt = index + 1;
+            flashLog('      设备未在 90 秒内回到 Fastboot，已停止。请检查数据线后重试。\n');
+            break;
+          }
+          flashLog('      设备已回到 Fastboot。\n');
+        }
+        if (flashRunner.leavesFastboot(command.args)) leftFastboot = true;
       }
-      sendLog('[固件刷机] XML 命令已全部执行完成，请按需要重启到系统并复核版本。\n');
-      return { code: 0, stdout: `已执行完成 ${parsed.commands.length} 条固件 Fastboot 命令。`, stderr: '' };
+
+      const durationMs = Date.now() - startedAt;
+      const durationText = `${(durationMs / 1000).toFixed(1)}s`;
+      const summary = [
+        `共 ${total} 条命令`,
+        `成功 ${succeeded} 条`,
+        failed.length ? `失败 ${failed.length} 条` : '失败 0 条',
+        parsed.skipped.length ? `跳过 ${parsed.skipped.length} 条 erase` : '',
+        `用时 ${durationText}`
+      ].filter(Boolean).join('，');
+
+      flashLog(`\n[固件刷机] ${stoppedAt ? `已中止：${summary}` : `全部执行完成：${summary}`}\n`);
+      if (failed.length) {
+        for (const item of failed) flashLog(`      · 第 ${item.index} 步 ${item.label}：${item.reason}\n`);
+      }
+      if (!failed.length && !stoppedAt) {
+        flashLog('[固件刷机] 建议重启到系统后核对版本号与基带。\n');
+      }
+
+      const flashSummary = {
+        total,
+        succeeded,
+        failed: failed.length,
+        skippedErase: parsed.skipped.length,
+        stoppedAt,
+        durationMs,
+        failures: failed
+      };
+
+      // 收尾前把缓冲里的输出冲出去，否则界面上最后几行会缺失
+      flushFlashOutput();
+      sendFlashProgress({ phase: 'done', summary: flashSummary, ok: !failed.length && !stoppedAt });
+
+      if (failed.length || stoppedAt) {
+        return {
+          code: 1,
+          stdout: `固件刷机未完成：${summary}`,
+          stderr: failed.map((item) => `第 ${item.index} 步 ${item.label}：${item.reason}`).join('\n'),
+          flashSummary
+        };
+      }
+      return {
+        code: 0,
+        stdout: `固件刷机完成：${summary}`,
+        stderr: '',
+        flashSummary
+      };
     }
     case 'firmware-open-folder': {
       if (!selectedFirmware) return { code: 1, stdout: '', stderr: '请先选择刷机包。' };
