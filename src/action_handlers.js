@@ -3,6 +3,8 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { createAppPackageQuery } = require('./app_package_query');
+const clonePolicy = require('./clone_policy');
+const apkPackageReader = require('./apk_package_reader');
 
 const ACTION_IDS = [
   'adb-diagnose', 'adb-reboot-system', 'ai-copilot-scan', 'ai-export-report', 'ai-full-diagnose',
@@ -299,25 +301,174 @@ function createActionHandlers(ctx) {
     return found;
   }
 
-  async function installAndroidFile(file) {
-    if (path.extname(file).toLowerCase() === '.apk') return adb(['install', '-r', file], { log: sendLog });
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-gaoji-splits-'));
-    const extracted = await extractArchive(file, temp);
-    if (extracted.code !== 0) return extracted;
-    const apks = walkFiles(temp, ['.apk']);
-    if (!apks.length) return fail(`分包中未找到 APK：${file}`);
-    return adb(['install-multiple', '-r', ...apks], { log: sendLog });
+  /**
+   * 取设备上的所有用户空间（机主 + 各应用分身）。
+   *
+   * `pm list users` 在极少数精简系统上可能不可用，此时返回空数组，
+   * 调用方会退化为"只装主空间"，不会因此中断安装。
+   */
+  async function listDeviceUsers() {
+    const result = await adb(['shell', 'pm', 'list', 'users'], { timeoutMs: 8000 });
+    if (result.code !== 0) return [];
+    return clonePolicy.parseUserSpaces(result.stdout);
+  }
+
+  /**
+   * 安装前拍一张"分身分布快照"。
+   *
+   * 记录：主空间的第三方包列表 + 每个分身空间各自的第三方包列表。
+   *
+   * 为什么要快照而不是直接查目标包：APK 里的 AndroidManifest 是二进制格式，
+   * 安装前拿不到包名。用"安装前后的包列表差分"就能反推本次装的是哪个包，
+   * 再拿快照判断"这个包原本装在哪些分身里"——不需要预先知道包名。
+   *
+   * 只查第三方包（-3）：系统包在分身里通常不存在，查了是浪费往返。
+   * 所有用户合并成一次 shell 调用，10 个分身也只需一次 adb 进程启动。
+   */
+  async function captureCloneSnapshot() {
+    const users = await listDeviceUsers();
+    if (users.length <= 1) return null; // 没有分身，不需要这套逻辑
+    const clones = clonePolicy.cloneUsers(users);
+
+    const parts = ['echo "=PRIMARY="', 'pm list packages -3 --user 0 | sed "s/^package://"'];
+    for (const user of clones) {
+      parts.push(`echo "=USER${user.id}="`);
+      parts.push(`pm list packages -3 --user ${user.id} 2>/dev/null | sed "s/^package://"`);
+    }
+    const result = await adb(['shell', parts.join('; ')], { timeoutMs: 30000 });
+    if (result.code !== 0) return null;
+
+    const primaryPackages = [];
+    const clonePackages = {};
+    let current = '';
+    for (const raw of lines(result.stdout)) {
+      const line = raw.trim();
+      if (/^=PRIMARY=$/.test(line)) { current = 'primary'; continue; }
+      const userMarker = line.match(/^=USER(\d+)=$/);
+      if (userMarker) {
+        current = userMarker[1];
+        clonePackages[Number(userMarker[1])] = new Set();
+        continue;
+      }
+      if (!line) continue;
+      if (current === 'primary') primaryPackages.push(line);
+      else if (current && clonePackages[Number(current)]) clonePackages[Number(current)].add(line);
+    }
+
+    return { users, clones, primaryPackages, clonePackages };
+  }
+
+  /**
+   * 安装一个 APK / 分包：**只装主空间**，并给已有该应用的分身补装。
+   *
+   * 关键修复：此前直接 `adb install -r`，在联想/摩托这类多分身机型上
+   * 会把包铺到全部用户空间——用户装一个应用，桌面上立刻多出 10 个分身图标。
+   *
+   * 现在的行为：
+   *   - 装之前先从 APK 里读出包名（apk_package_reader，纯 JS 解析二进制清单）；
+   *   - 主空间用 `--user 0` 安装，不触碰任何分身；
+   *   - 若该包原本就装在部分分身里，用 `install-existing` 同步那些分身
+   *     （不重传 APK、不占额外存储，对分包应用尤其重要）；
+   *   - 没用过该应用的分身保持原样，绝不主动新建分身。
+   *
+   * 包名必须**在安装前**拿到：`adb install` 的成功输出只有一行 `Success`，
+   * 而"安装前后差分包列表"对覆盖安装（升级）无效——升级时包名不变，
+   * 差分查不到任何新增项，分身策略会被整个跳过，分身停留在旧版本。
+   *
+   * @param {string} file 本地安装包路径
+   * @param {object} options.cloneSnapshot 安装前拍的分身分布快照
+   */
+  async function installAndroidFile(file, options = {}) {
+    const isSplit = path.extname(file).toLowerCase() !== '.apk';
+    let temp = '';
+    let apks = [];
+    if (isSplit) {
+      temp = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-gaoji-splits-'));
+      const extracted = await extractArchive(file, temp);
+      if (extracted.code !== 0) return extracted;
+      apks = walkFiles(temp, ['.apk']);
+      if (!apks.length) return fail(`分包中未找到 APK：${file}`);
+    }
+
+    // 安装前读包名：失败不影响安装本身，只是分身策略会退化
+    const pkg = apkPackageReader.packageNameFromFile(file);
+    if (pkg) sendLog(`[安装] ${path.basename(file)}（${pkg}）：目标仅主空间（--user 0）\n`);
+    else sendLog(`[安装] ${path.basename(file)}：未能读取包名，仅安装到主空间\n`);
+
+    const installArgs = isSplit
+      ? ['install-multiple', '-r', '--user', String(clonePolicy.PRIMARY_USER), ...apks]
+      : ['install', '-r', '--user', String(clonePolicy.PRIMARY_USER), file];
+    const result = await adb(installArgs, { log: sendLog });
+
+    let notes = [];
+    if (result.code === 0 && options.cloneSnapshot) {
+      notes = await applyClonePolicy(options.cloneSnapshot, pkg);
+    }
+    if (temp) fs.rmSync(temp, { recursive: true, force: true });
+
+    if (!notes.length) return result;
+    return { ...result, stdout: `${result.stdout || ''}\n${notes.join('\n')}`.trim() };
+  }
+
+  /**
+   * 安装后按快照同步分身。
+   *
+   * @param {object} snapshot 安装前拍的分身分布快照
+   * @param {string} pkg      本次安装的包名（由 apk_package_reader 在安装前读出）
+   *
+   * 判定规则：
+   *   - 该包在快照里存在于哪些分身 -> 就对那些分身 install-existing；
+   *   - 一个分身都没装过该包 -> 什么都不做（这正是"不新建分身"的关键）。
+   */
+  async function applyClonePolicy(snapshot, pkg) {
+    const clones = snapshot.clones || [];
+    if (!clones.length) return [];
+
+    const target = String(pkg || '').trim();
+    if (!target) {
+      return [`已装主空间；未能读取包名，${clones.length} 个分身保持原样。`];
+    }
+
+    const targetClones = clones
+      .filter((user) => snapshot.clonePackages?.[user.id]?.has(target))
+      .map((user) => user.id);
+
+    if (!targetClones.length) {
+      return [`${target}：已装主空间；${clones.length} 个分身原本没有该应用，未新建分身。`];
+    }
+
+    const applied = [];
+    for (const userId of targetClones) {
+      const r = await adb(
+        ['shell', 'cmd', 'package', 'install-existing', '--user', String(userId), target],
+        { log: sendLog }
+      );
+      applied.push(`${userId}${r.code === 0 ? '✓' : '✗'}`);
+    }
+    const failed = applied.filter((item) => item.endsWith('✗')).length;
+    return [
+      `${target}：已装主空间；原有该应用的 ${targetClones.length} 个分身已同步` +
+      `（${applied.join(' ')}）${failed ? `，${failed} 个失败` : ''}。`
+    ];
   }
 
   async function installFiles(files, title) {
     const guard = await requireAdb();
     if (guard) return guard;
     if (!files.length) return fail('没有选择安装包。');
+
+    // 一次安装动作只拍一次快照：同一批里的多个包共用。
+    // 设备没有分身时 captureCloneSnapshot 返回 null，安装退化为纯 --user 0。
+    const cloneSnapshot = await captureCloneSnapshot();
+    if (cloneSnapshot) {
+      sendLog(`[分身策略] 检测到 ${cloneSnapshot.clones.length} 个分身空间，仅安装到主空间；原有该应用的分身会同步更新。\n`);
+    }
+
     const results = [];
     let failures = 0;
     for (const file of files) {
       sendLog(`[${title}] ${path.basename(file)}\n`);
-      const result = await installAndroidFile(file);
+      const result = await installAndroidFile(file, { cloneSnapshot });
       if (result.code !== 0) failures += 1;
       results.push(`${path.basename(file)}：${result.code === 0 ? '成功' : '失败'}\n${textOf(result)}`);
     }

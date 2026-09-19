@@ -8,7 +8,7 @@
 谷歌三件套装了不能用**——闪退、停用、重启失效一条流程修完；
 另覆盖设备诊断、Root 与面具、分区提取、固件刷机、应用管理、无线投屏与救砖修复。
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue?style=flat-square)](VERSIONS.md)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue?style=flat-square)](VERSIONS.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4?style=flat-square)](#环境要求)
 [![Electron](https://img.shields.io/badge/Electron-41.2.1-47848f?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![Node](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](#环境要求)
@@ -233,6 +233,8 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 ### 📱 应用管理
 - 应用列表、批量导出 APK
 - 单个 / 批量安装与卸载
+- **安装只进主空间**：多分身机型上不会自动产生 10 个分身
+- **已有分身自动同步**：原本建过分身的应用升级时只更新那些分身
 - 批量冻结 / 解冻（主用户）
 - 清理单个应用数据
 - 快速启动应用
@@ -370,7 +372,7 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 **这是给普通用户的推荐方式**——下载、安装、连手机，三步就能用，不需要 Node.js，
 也不需要做任何额外配置。
 
-1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.2.0-Setup.exe`
+1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.2.1-Setup.exe`
 2. 双击安装（支持自选安装目录，会创建桌面与开始菜单快捷方式）
 3. 用数据线连接手机，打开 USB 调试，应用会自动识别
 
