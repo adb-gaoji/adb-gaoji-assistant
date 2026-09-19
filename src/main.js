@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const { createActionHandlers, shellArg } = require('./action_handlers');
 const { createDeviceRebooter } = require('./device_reboot');
 const { DANGEROUS_ACTIONS: DANGEROUS_ACTION_LIST } = require('./actions.registry');
+const { resolveFlashTarget } = require('./slot_resolver');
 const { findFirmwareXml, parseFirmwareXml, firmwareReport } = require('./firmware_parser');
 const { lines, parseAdbDevices, parseFastbootDevices } = require('./adb_parser');
 
@@ -457,6 +458,57 @@ async function dispatchAction(action, payload = {}) {
       return deviceRebooter.run(action, payload);
     case 'current-slot':
       return fastboot(['getvar', 'current-slot'], { log: sendLog });
+    case 'flash-slot-info': {
+      // 刷 boot/init_boot 前的一次性体检：
+      //   设备是否 A/B 机型、当前活动槽位是哪个、目标分区在设备上是否真的存在。
+      //
+      // 为什么要逐个探测分区存在性：不同机型的 boot 布局差异很大——
+      //   老机型只有 boot / recovery；Android 13+ 把 ramdisk 挪到 init_boot；
+      //   部分机型还有 vendor_boot。名字猜错时 fastboot 会直接报错，
+      //   但那是刷写中途才失败，此时镜像已经传了一部分，体验很差。
+      //   提前用 getvar partition-size:<name> 探一遍，能在选镜像之前就告诉用户哪个可用。
+      if (!mainWindow) return { code: 1, stdout: '', stderr: '主窗口不可用。' };
+
+      const slotVar = await fastboot(['getvar', 'current-slot'], { timeoutMs: 8000 });
+      const slotText = `${slotVar.stdout}${slotVar.stderr}`;
+      const slotMatch = slotText.match(/current-slot:\s*([ab])/i);
+      const currentSlot = slotMatch ? slotMatch[1].toLowerCase() : '';
+
+      // current-slot 读不到通常意味着两种情况之一：
+      //   a) 这台机器不是 A/B 分区（单槽机型，分区名不带后缀）
+      //   b) 当前不在 Fastboot 模式
+      const isAbDevice = Boolean(currentSlot);
+
+      const candidates = isAbDevice
+        ? ['boot_a', 'boot_b', 'init_boot_a', 'init_boot_b', 'vendor_boot_a', 'vendor_boot_b', 'vbmeta_a', 'vbmeta_b']
+        : ['boot', 'init_boot', 'vendor_boot', 'vbmeta', 'recovery'];
+
+      const available = [];
+      const missing = [];
+      for (const name of candidates) {
+        const probe = await fastboot(['getvar', `partition-size:${name}`], { timeoutMs: 6000 });
+        const probeText = `${probe.stdout}${probe.stderr}`;
+        // fastboot 对不存在的分区会回 FAILED / "partition-size:xxx: not found"
+        const notFound = /FAILED|not found|unknown partition|Variable not found|error/i.test(probeText);
+        if (notFound) missing.push(name); else available.push(name);
+      }
+
+      const lines = [
+        `设备分区布局：${isAbDevice ? 'A/B 双槽' : '单槽（或未进入 Fastboot）'}`,
+        `当前活动槽位：${currentSlot ? currentSlot.toUpperCase() : '未能读取'}`,
+        '',
+        `可写分区（${available.length}）：${available.join('、') || '无'}`,
+        `不存在的分区（${missing.length}）：${missing.join('、') || '无'}`
+      ];
+
+      // 给前端一份结构化数据，便于直接把不存在的槽位灰掉
+      return {
+        code: 0,
+        stdout: lines.join('\n'),
+        stderr: '',
+        slotInfo: { isAbDevice, currentSlot, available, missing }
+      };
+    }
     case 'firmware-open-url': {
       const url = String(payload.url || '');
       if (!/^https:\/\//i.test(url)) return { code: 1, stdout: '', stderr: '固件下载地址无效。' };
@@ -572,9 +624,39 @@ async function dispatchAction(action, payload = {}) {
       return fastboot(['boot', selected.filePaths[0]], { log: sendLog });
     }
     case 'flash-image': {
+      // 目标分区名由 slot_resolver 统一拼装，规则与界面侧完全一致。
+      //
+      // 三种入参形态都支持：
+      //   1) partition='boot' + slot='a'|'b'  -> boot_a / boot_b
+      //   2) partition='boot_a'（已带后缀）     -> 原样使用
+      //   3) slot='' 或单槽机型                 -> 保持裸分区名
+      //
+      // 拼完之后先跑一遍设备侧校验（分区是否存在、是否写向非活动槽），
+      // 把问题拦在弹文件选择框之前——用户还没选镜像就被拦下，
+      // 比传输到一半才失败要好得多。
+      const deviceProbe = await fastboot(['getvar', 'current-slot'], { timeoutMs: 8000 });
+      const probeText = `${deviceProbe.stdout}${deviceProbe.stderr}`;
+      const probeMatch = probeText.match(/current-slot:\s*([ab])/i);
+      const deviceSlot = probeMatch ? probeMatch[1].toLowerCase() : '';
+      const isAbDevice = Boolean(deviceSlot);
+
+      const target = resolveFlashTarget({
+        partition: payload.partition || 'boot',
+        slot: payload.slot,
+        device: { isAbDevice, currentSlot: deviceSlot }
+      });
+      if (target.blocked) return { code: 2, stdout: '', stderr: target.blocked };
+
       const selected = await dialog.showOpenDialog(mainWindow, { filters: [{ name: 'Images', extensions: ['img'] }], properties: ['openFile'] });
       if (selected.canceled || !selected.filePaths[0]) return { code: 1, stdout: '', stderr: '已取消' };
-      return fastboot(['flash', payload.partition || 'boot', selected.filePaths[0]], { log: sendLog });
+
+      sendLog(`[刷入] 目标分区：${target.partition}\n${target.notes.join('\n')}\n`);
+      const result = await fastboot(['flash', target.partition, selected.filePaths[0]], { log: sendLog });
+      return {
+        ...result,
+        stdout: `${result.stdout || ''}\n目标分区：${target.partition}${target.notes.length ? `\n${target.notes.join('\n')}` : ''}`.trim(),
+        stderr: result.stderr || ''
+      };
     }
     case 'tea-boot-builder': {
       const library = path.join(getResourceRoot(), 'tea-templates');

@@ -8,13 +8,13 @@
 谷歌三件套装了不能用**——闪退、停用、重启失效一条流程修完；
 另覆盖设备诊断、Root 与面具、分区提取、固件刷机、应用管理、无线投屏与救砖修复。
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue?style=flat-square)](VERSIONS.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue?style=flat-square)](VERSIONS.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4?style=flat-square)](#环境要求)
 [![Electron](https://img.shields.io/badge/Electron-41.2.1-47848f?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![Node](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](#环境要求)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-55%20passed-brightgreen?style=flat-square)](#测试与质量保障)
-[![CI](https://img.shields.io/badge/CI-14%20checks-brightgreen?style=flat-square)](#测试与质量保障)
+[![CI](https://img.shields.io/badge/CI-15%20checks-brightgreen?style=flat-square)](#测试与质量保障)
 
 [⭐ 谷歌三件套修复](#-主打功能谷歌三件套修复) · [为什么用它](#为什么用它) ·
 [一起做得更好](#一起把它做得更好) · [功能特性](#功能特性) · [界面风格](#界面风格) ·
@@ -138,8 +138,8 @@ cmd appops set --user 0 <包名> RUN_ANY_IN_BACKGROUND allow   # 允许任意后
 | 指标 | 实际情况 |
 |---|---|
 | 单元与契约测试 | **55 项全绿**（12 个测试文件）|
-| 自动化审计 | **10 个独立审计脚本**，覆盖动作契约、危险边界、任务流、UI 状态、无线投屏、无线配对、投屏会话、主题、对比度、文档链接 |
-| CI 检查 | **14 项**，GitHub Actions 每次推送自动跑 |
+| 自动化审计 | **11 个独立审计脚本**，覆盖动作契约、危险边界、任务流、UI 状态、无线投屏、无线配对、投屏会话、主题、对比度、文档链接、表单正则 |
+| CI 检查 | **15 项**，GitHub Actions 每次推送自动跑 |
 | 语法门禁 | 10 个核心源文件逐个 `node --check` |
 | 依赖安全 | 生产依赖 **0 漏洞**（仅 1 个 MIT 许可依赖）|
 | 对比度 | 6 套主题 × 6 处文字，用**真实渲染**测 WCAG 对比度，不达标即失败 |
@@ -275,6 +275,9 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 ### 🧩 分区与镜像
 - 关键分区备份（boot / vbmeta / dtbo 等）
 - 分区镜像提取与刷写
+- **刷入 Boot / init_boot 可选 A/B 槽位**（分区与槽位分离，自动拼装分区名）
+- **检测分区与槽位**：列出设备上真实存在的可写分区，选镜像前先确认
+- 写向非活动槽时明确提醒（避免刷了不生效或覆盖回滚能力）
 - `payload.bin` 解包
 - 临时启动镜像（不改动设备）
 - A/B 槽位查询与切换
@@ -367,7 +370,7 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 **这是给普通用户的推荐方式**——下载、安装、连手机，三步就能用，不需要 Node.js，
 也不需要做任何额外配置。
 
-1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.1.0-Setup.exe`
+1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.2.0-Setup.exe`
 2. 双击安装（支持自选安装目录，会创建桌面与开始菜单快捷方式）
 3. 用数据线连接手机，打开 USB 调试，应用会自动识别
 
@@ -488,7 +491,7 @@ npm test         # 语法检查 + 54 项单元/契约测试
 npm run ci       # 完整 CI：语法 → 测试 → 依赖审计 → 9 项审计 → 资源校验
 ```
 
-CI 共 **14 项检查**。除单元测试外，还有一组**后台审计脚本**，
+CI 共 **15 项检查**。除单元测试外，还有一组**后台审计脚本**，
 不启动 Electron 窗口即可校验跨层契约：
 
 | 审计 | 校验内容 |
@@ -503,6 +506,7 @@ CI 共 **14 项检查**。除单元测试外，还有一组**后台审计脚本*
 | `audit:themes` | 6 套主题的 CSS 变量是否完整 |
 | `audit:contrast` | 真实渲染下测量 6 套主题 × 6 处文字的 WCAG 对比度 |
 | `audit:links` | 文档里的相对链接与页内锚点是否有效（防死链） |
+| `audit:patterns` | 表单 `pattern` 在 Chromium v 模式下是否合法（非法会让校验静默失效） |
 
 审计脚本用退出码表达严重度：
 
@@ -543,7 +547,7 @@ scripts/
   ci.ps1                  完整 CI
   release.ps1             发布流程
   verify-resources.ps1    资源完整性校验
-  audit-*.js              10 项契约审计
+  audit-*.js              11 项契约审计
 tests/                    单元与契约测试（54 项）
 design/                   界面风格定义、对比页、应用截图
 resources/                运行时资源（不纳入版本控制，见下）

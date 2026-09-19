@@ -135,9 +135,63 @@ const ACTION_FORMS = {
   'wireless-pair': { title: '无线调试配对', description: '适用于 Android 11 及以上。请在开发者选项的无线调试页面读取配对端口和 6 位配对码。', fields: [{ name: 'host', label: '手机 IP', value: '', pattern: '[0-9.]+', hint: '例如 192.168.1.88' }, { name: 'pairPort', label: '配对端口', value: '', pattern: '[0-9]{1,5}', hint: '配对弹窗中显示的端口' }, { name: 'pairingCode', label: '6 位配对码', value: '', pattern: '[0-9]{6}' }, { name: 'connectPort', label: '连接端口', value: '5555', pattern: '[0-9]{1,5}', required: false, hint: '无线调试主页显示的端口，可留空仅配对' }] },
   'mirror-console': { title: '投屏控制台', description: '设置 scrcpy 码率、最长边、帧率和控制模式。', fields: [{ name: 'bitrate', label: '视频码率（Mbps）', value: '12', pattern: '[0-9]{1,3}', hint: '范围 1 - 100' }, { name: 'maxSize', label: '画面最长边', value: '1920', pattern: '[0-9]{3,4}', hint: '范围 480 - 4320' }, { name: 'fps', label: '最高帧率', value: '60', pattern: '[0-9]{2,3}', hint: '范围 15 - 120' }, { name: 'control', label: '控制模式', type: 'select', value: 'control', options: [['control', '显示并控制'], ['view', '仅显示']] }] },
   'fastboot-set-active': { title: '切换启动槽位', description: '仅适用于 A/B 分区设备，切换错误可能导致无法启动。', fields: [{ name: 'slot', label: '目标槽位', type: 'select', value: 'a', options: [['a', '槽位 A'], ['b', '槽位 B']] }] },
-  'flash-image': { title: '刷入 IMG', description: '必须确认镜像与目标分区、机型和系统版本完全匹配。', fields: [{ name: 'partition', label: '目标分区', value: 'boot', pattern: '[A-Za-z0-9_\-]+', hint: '例如 boot、init_boot、vendor_boot、vbmeta' }] },
+  // 刷入 IMG：分区用下拉而不是自由文本。
+  //
+  // 原来让用户手打 "boot_a" 这种带槽位后缀的名字，问题是：
+  //   1) 多数人不知道 A/B 机型必须带后缀，直接打 boot 会写到不存在的分区；
+  //   2) 打错一个字母要到刷写中途才报错，那时镜像已经传了一部分；
+  //   3) 界面按钮写的是"选择 A/B 槽位对应的 boot 镜像"，但没有任何槽位选择。
+  // 现在拆成"分区类型 + 槽位"两个下拉，由程序拼装最终分区名，
+  // 同时保留"自定义"入口给非常规分区（如 vendor_boot、recovery）。
+  'flash-image': {
+    title: '刷入 IMG',
+    description: '必须确认镜像与目标分区、机型和系统版本完全匹配。A/B 机型请选对槽位——写错槽不会生效，覆盖备槽还会失去回滚能力。',
+    fields: [
+      {
+        name: 'partition',
+        label: '分区',
+        type: 'select',
+        value: 'boot',
+        options: [
+          ['boot', 'boot（内核 / ramdisk）'],
+          ['init_boot', 'init_boot（Android 13+ 的 ramdisk）'],
+          ['vendor_boot', 'vendor_boot（厂商内核模块）'],
+          ['vbmeta', 'vbmeta（校验与 AVB）'],
+          ['dtbo', 'dtbo（设备树叠加）'],
+          ['recovery', 'recovery（旧机型恢复分区）'],
+          ['custom', '自定义分区名…']
+        ]
+      },
+      {
+        name: 'customPartition',
+        label: '自定义分区名',
+        value: '',
+        // 注意：pattern 会按 Chromium 的 v 模式（unicodeSets）编译，
+        // 该模式下字符类里**不能出现字面连字符**，`-`、`\-`、`[-...]` 全部非法，
+        // 必须写成 `\x2d`。写错的后果不是报错，而是整个 pattern 被静默忽略、
+        // 表单校验失效（只有控制台留一行错误）。
+        // scripts/audit-form-patterns.js 会在 CI 里挡住这类写法。
+        pattern: '[A-Za-z0-9_\\x2d]+',
+        required: false,
+        hint: '仅在上面选“自定义”时填写，可带槽位后缀，例如 system_a'
+      },
+      {
+        name: 'slot',
+        label: '目标槽位',
+        type: 'select',
+        value: 'current',
+        options: [
+          ['current', '当前活动槽位（推荐，自动读取）'],
+          ['a', '槽位 A'],
+          ['b', '槽位 B'],
+          ['none', '不带槽位后缀（单槽机型）']
+        ]
+      }
+    ]
+  },
   'gms-fix-app-license': { title: '修复依赖 Google 服务的应用', description: '放行 Google 服务后重新启动指定应用。', fields: [{ name: 'packageName', label: '目标应用包名', value: 'com.openai.chatgpt', pattern: '[A-Za-z0-9._]+' }] },
-  'moto-bl-unlock': { title: 'Motorola Bootloader 解锁', description: '可先读取官网申请数据；拿到官方 Unlock Key 后再选择执行。解锁会清除数据。', fields: [{ name: 'mode', label: '操作', type: 'select', value: 'read', options: [['read', '读取解锁数据并打开官网'], ['unlock', '执行官方 Unlock Key']] }, { name: 'unlockKey', label: '官方 Unlock Key', value: '', required: false, pattern: '[A-Za-z0-9._\-]*', hint: '读取数据时可留空；执行解锁码时必须填写' }] }
+  // pattern 按 Chromium v 模式编译，连字符必须写 \x2d（详见 customPartition 处说明）
+  'moto-bl-unlock': { title: 'Motorola Bootloader 解锁', description: '可先读取官网申请数据；拿到官方 Unlock Key 后再选择执行。解锁会清除数据。', fields: [{ name: 'mode', label: '操作', type: 'select', value: 'read', options: [['read', '读取解锁数据并打开官网'], ['unlock', '执行官方 Unlock Key']] }, { name: 'unlockKey', label: '官方 Unlock Key', value: '', required: false, pattern: '[A-Za-z0-9._\\x2d]*', hint: '读取数据时可留空；执行解锁码时必须填写' }] }
 };
 
 const $ = (id) => document.getElementById(id);
@@ -149,6 +203,13 @@ let taskTicker = null;
 let firmwareXmlMode = 'auto';
 let latestDeviceMode = '未连接';
 let latestDeviceSerial = '';
+/**
+ * 设备当前活动槽位（'a' / 'b'，读不到时为空串）。
+ *
+ * 刷 boot 时"当前活动槽位"是最常用的选择，但它要在用户打开参数弹窗**之前**
+ * 就已经拿到，所以在这里作为运行时状态缓存，由状态刷新写入。
+ */
+let latestDeviceSlot = '';
 let logBuffer = '';
 let lastErrorMessage = '';
 const taskState = { current: null, history: [] };
@@ -389,7 +450,9 @@ function updateStatusUI(status) {
   $('deviceName').textContent = model || serial || '未检测到设备';
   $('heroStatus').textContent = status.deviceText || '请连接手机并开启 USB 调试';
   setText('connectionModeText', mode, '未连接');
-  setText('slotText', String(status.props?.slot || '').replace(/^_/, ''), '-');
+  latestDeviceSlot = String(status.props?.slot || '').replace(/^_/, '').toLowerCase();
+  if (!/^[ab]$/.test(latestDeviceSlot)) latestDeviceSlot = '';
+  setText('slotText', latestDeviceSlot ? latestDeviceSlot.toUpperCase() : '', '-');
   $('recommendationTitle').textContent = mode === '未连接' ? '先连接手机并完成 USB 调试授权' : mode === '未授权' ? '请在手机上确认 USB 调试授权' : mode === 'Fastboot' ? '设备已进入 Fastboot，请先核对机型和操作目标' : '设备已连接，可以选择需要执行的功能';
   $('recommendationText').textContent = mode === '未连接' ? '连接向导会区分未连接、未授权、ADB 和 Fastboot 状态。' : status.deviceText || '设备状态已更新。';
 
@@ -1254,9 +1317,15 @@ async function runAction(button) {
 
   const formPayload = await collectActionPayload(action);
   if (formPayload === null) return;
+  // resolveActionPayload 返回 false 表示参数不可用（例如槽位解析被拦下），
+  // 此时已完成日志提示，直接中止本次执行而不是带着旧值往下走。
+  if (formPayload === false) return;
   const payload = { ...formPayload };
   if (button.dataset.part) payload.part = button.dataset.part;
-  if (button.dataset.partition) payload.partition = button.dataset.partition;
+  // 按钮上的 data-partition 只是给参数弹窗一个默认值（见 ACTION_FORMS 的字段初值）。
+  // 弹窗关闭后用户可能改过分区与槽位，因此这里只在弹窗没产出 partition 时才回填，
+  // 否则会把已经拼好槽位后缀的 boot_a 覆盖回 boot。
+  if (button.dataset.partition && !payload.partition) payload.partition = button.dataset.partition;
   if (button.dataset.dir) payload.dir = button.dataset.dir;
   if (button.dataset.allowErase) payload.allowErase = button.dataset.allowErase === 'true';
   if (button.dataset.url) payload.url = button.dataset.url;
@@ -1276,8 +1345,12 @@ async function runAction(button) {
     setTaskStatus('warning', contextError);
     return;
   }
+  // 确认弹窗必须显示**最终**写入目标，而不是用户选的类型。
+  // 对 A/B 机型来说 payload.partition 已经是 boot_a / boot_b，
+  // 用户在这一步能看出槽位是否选对——这是刷机前最后一道防线。
   const confirmText = button.dataset.confirm || ACTION_CONFIRMS[action] || (DANGEROUS_ACTIONS.has(action) ? `${label}可能修改设备或应用状态，确认继续？` : '');
-  if (confirmText && !(await askRiskConfirmation({ message: confirmText, action: label, target: payload.partition || payload.packageName || payload.dir || label }))) return;
+  const confirmTarget = payload.partition || payload.packageName || payload.dir || label;
+  if (confirmText && !(await askRiskConfirmation({ message: confirmText, action: label, target: confirmTarget }))) return;
   if (DANGEROUS_ACTIONS.has(action)) payload.riskConfirmed = true;
   if (!beginTask(label, action)) return;
   const showsInstallProgress = INSTALL_ACTIONS.has(action);
@@ -1385,7 +1458,32 @@ function collectActionPayload(action) {
       hint.textContent = field.hint;
       label.appendChild(hint);
     }
+    // 记录字段与所属分区下拉的绑定，供下方联动使用
+    if (field.name === 'customPartition' || field.name === 'slot') {
+      label.dataset.field = field.name;
+      label.dataset.dependsOn = 'partition';
+    }
     fields.appendChild(label);
+  }
+
+  // 分区选"自定义"时才显示自定义输入框；其它分区不需要它。
+  // 这样界面上不会同时出现互相矛盾的选项。
+  const syncFieldVisibility = () => {
+    const partitionControl = fields.querySelector('[name="partition"]');
+    const customLabel = fields.querySelector('label[data-field="customPartition"]');
+    const slotLabel = fields.querySelector('label[data-field="slot"]');
+    const customInput = customLabel?.querySelector('input');
+    const isCustom = partitionControl?.value === 'custom';
+    if (customLabel) {
+      customLabel.hidden = !isCustom;
+      if (customInput) customInput.required = isCustom;
+    }
+    if (slotLabel) slotLabel.hidden = false;
+  };
+  const partitionControl = fields.querySelector('[name="partition"]');
+  if (partitionControl) {
+    partitionControl.addEventListener('change', syncFieldVisibility);
+    syncFieldVisibility();
   }
 
   return new Promise((resolve) => {
@@ -1400,12 +1498,52 @@ function collectActionPayload(action) {
       if (!form.reportValidity()) return;
       const values = Object.fromEntries(new FormData(form).entries());
       dialog.close();
-      finish(values);
+      finish(resolveActionPayload(action, values));
     };
     dialog.onclose = () => finish(null);
     dialog.showModal();
     fields.querySelector('input, select')?.focus();
   });
+}
+
+/**
+ * 表单值 → 后端 payload 的收尾处理。
+ *
+ * 目前只有 flash-image 需要加工：把「分区类型 + 槽位」拼成真实分区名。
+ * 拼装规则复用 slot_resolver.js——与主进程同一份实现，
+ * 避免出现"界面显示 boot_a、实际写入 boot_b"这类两侧不一致。
+ */
+function resolveActionPayload(action, values) {
+  const payload = { ...values };
+  if (action !== 'flash-image') return payload;
+
+  const resolver = window.SLOT_RESOLVER;
+  const base = payload.partition === 'custom'
+    ? String(payload.customPartition || '').trim()
+    : String(payload.partition || 'boot');
+  delete payload.customPartition;
+
+  // resolver 缺失属于加载顺序错误，宁可让它显式失败也不静默拼错分区
+  if (!resolver) {
+    payload.partition = base;
+    appendLog('[槽位] 分区解析模块未加载，已按原始分区名提交，请人工核对。\n');
+    return payload;
+  }
+
+  const device = {
+    isAbDevice: Boolean(latestDeviceSlot),
+    currentSlot: latestDeviceSlot
+  };
+  const target = resolver.resolveFlashTarget({ partition: base, slot: payload.slot, device });
+  if (target.blocked) {
+    // 用 false 表示"取消本次提交"，由调用方按取消处理
+    appendLog(`[槽位] ${target.blocked}\n`);
+    return false;
+  }
+  if (target.notes.length) appendLog(`[槽位] ${target.notes.join(' ')}\n`);
+  payload.partition = target.partition;
+  payload.slot = '';
+  return payload;
 }
 
 function renderFirmwareLibrary() {

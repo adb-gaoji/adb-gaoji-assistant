@@ -38,7 +38,8 @@
   /** 需要设备处于 Fastboot 模式才能执行。 */
   const FASTBOOT_REQUIRED_ACTIONS = [
     'firmware-flash', 'flash-image', 'boot-image', 'fastboot-set-active', 'fastboot-continue',
-    'fastboot-getvar-all', 'fastboot-unlock-status', 'lenovo-unlock-go', 'moto-bl-unlock', 'reboot-fastbootd'
+    'fastboot-getvar-all', 'fastboot-unlock-status', 'lenovo-unlock-go', 'moto-bl-unlock', 'reboot-fastbootd',
+    'flash-slot-info'
   ];
 
   /** 需要设备处于 ADB 系统模式才能执行。 */

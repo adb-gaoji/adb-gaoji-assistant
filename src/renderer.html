@@ -185,14 +185,15 @@
           <section class="workbench-panel">
             <div class="workbench-titlebar"><div><h2>Fastboot 刷入工作台</h2><p>先识别镜像和当前槽位，再选择临时启动或写入分区。</p></div><span class="status-badge"><span class="state-indicator"></span>连接状态见左下角</span></div>
             <div class="action-grid legacy-order-grid">
-              <button class="command-tile danger-tile" data-action="flash-image" data-partition="boot" data-confirm="确认刷入 boot？刷错会导致无法开机。"><span class="command-icon"><i class="ph ph-warning" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入 Boot</strong><small>选择 A/B 槽位对应的 boot 镜像后写入</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile danger-tile" data-action="flash-image" data-partition="boot" data-confirm="确认刷入 boot？刷错分区或槽位会导致无法开机。"><span class="command-icon"><i class="ph ph-warning" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入 Boot</strong><small>选择分区与 A/B 槽位后写入 boot</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
               <button class="command-tile danger-tile" data-action="flash-image" data-partition="init_boot" data-confirm="确认刷入 init_boot？请确保镜像匹配机型和槽位。"><span class="command-icon"><i class="ph ph-warning" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入 init_boot</strong><small>适用于使用 init_boot 的新版本设备</small></span><i class="ph ph-caret-right command-arrow" aria-hidden="true"></i></button>
               <button class="command-tile" data-action="boot-image" data-confirm="确认临时启动选择的镜像？"><span class="command-icon"><i class="ph ph-play" aria-hidden="true"></i></span><span class="command-copy"><strong>临时启动 IMG</strong><small>执行 fastboot boot，不写入任何分区</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
-              <button class="command-tile" data-action="flash-image" data-confirm="确认刷入自选分区？请确保分区名与镜像完全匹配。"><span class="command-icon"><i class="ph ph-hard-drives" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入任意 IMG</strong><small>手动选择镜像，默认写入 boot 分区</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
+              <button class="command-tile" data-action="flash-image" data-confirm="确认刷入自选分区？请确保分区名与镜像完全匹配。"><span class="command-icon"><i class="ph ph-hard-drives" aria-hidden="true"></i></span><span class="command-copy"><strong>刷入任意 IMG</strong><small>手动选择分区与槽位，默认写入 boot</small></span><i class="ph ph-folder-open command-arrow" aria-hidden="true"></i></button>
             </div>
             <div class="panel-caption section-separator"><div><h3>辅助操作</h3><p>先检查槽位和设备变量，再执行写入。</p></div></div>
             <div class="tool-strip">
               <button class="secondary-button" id="fastbootRefresh" type="button"><i class="ph ph-arrow-clockwise" aria-hidden="true"></i><span>刷新状态</span></button>
+              <button class="secondary-button" data-action="flash-slot-info"><i class="ph ph-scan" aria-hidden="true"></i><span>检测分区与槽位</span></button>
               <button class="secondary-button" data-action="current-slot"><i class="ph ph-arrows-left-right" aria-hidden="true"></i><span>查看当前槽位</span></button>
               <button class="secondary-button" data-action="fastboot-getvar-all"><i class="ph ph-list-magnifying-glass" aria-hidden="true"></i><span>Getvar 全部</span></button>
               <button class="secondary-button" data-action="fastboot-reboot"><i class="ph ph-power" aria-hidden="true"></i><span>重启到系统</span></button>
@@ -448,6 +449,7 @@
     <button class="secondary-button install-progress-close" id="closeInstallProgress" type="button" hidden>关闭</button>
   </dialog>
   <script src="./actions.registry.js"></script>
+  <script src="./slot_resolver.js"></script>
   <script src="./firmware-catalog.js"></script>
   <script src="./renderer.js"></script>
 </body>

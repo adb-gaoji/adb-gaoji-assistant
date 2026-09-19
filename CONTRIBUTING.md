@@ -80,7 +80,7 @@ pwsh -File scripts/verify-resources.ps1    # 查看缺哪些
 
 ```powershell
 npm test        # 语法检查 + 54 项单元/契约测试
-npm run ci      # 完整 CI：语法 → 测试 → 依赖审计 → 10 项审计 → 资源校验
+npm run ci      # 完整 CI：语法 → 测试 → 依赖审计 → 11 项审计 → 资源校验
 ```
 
 **提交 PR 前 `npm run ci` 必须通过。** CI 只在出现 P0 问题时失败；已在
