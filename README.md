@@ -13,7 +13,7 @@
 [![Electron](https://img.shields.io/badge/Electron-41.2.1-47848f?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![Node](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](#环境要求)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-55%20passed-brightgreen?style=flat-square)](#测试与质量保障)
+[![Tests](https://img.shields.io/badge/tests-91%20passed-brightgreen?style=flat-square)](#测试与质量保障)
 [![CI](https://img.shields.io/badge/CI-15%20checks-brightgreen?style=flat-square)](#测试与质量保障)
 
 [⭐ 谷歌三件套修复](#-主打功能谷歌三件套修复) · [为什么用它](#为什么用它) ·
@@ -137,7 +137,7 @@ cmd appops set --user 0 <包名> RUN_ANY_IN_BACKGROUND allow   # 允许任意后
 
 | 指标 | 实际情况 |
 |---|---|
-| 单元与契约测试 | **55 项全绿**（12 个测试文件）|
+| 单元与契约测试 | **91 项全绿**（15 个测试文件）|
 | 自动化审计 | **11 个独立审计脚本**，覆盖动作契约、危险边界、任务流、UI 状态、无线投屏、无线配对、投屏会话、主题、对比度、文档链接、表单正则 |
 | CI 检查 | **15 项**，GitHub Actions 每次推送自动跑 |
 | 语法门禁 | 10 个核心源文件逐个 `node --check` |
@@ -489,7 +489,7 @@ Electron 三层结构，主进程与渲染进程通过 IPC 通信：
 
 ```powershell
 npm run check    # 语法检查（node --check 全部源文件）
-npm test         # 语法检查 + 54 项单元/契约测试
+npm test         # 语法检查 + 91 项单元/契约测试
 npm run ci       # 完整 CI：语法 → 测试 → 依赖审计 → 9 项审计 → 资源校验
 ```
 
@@ -550,7 +550,7 @@ scripts/
   release.ps1             发布流程
   verify-resources.ps1    资源完整性校验
   audit-*.js              11 项契约审计
-tests/                    单元与契约测试（54 项）
+tests/                    单元与契约测试（91 项）
 design/                   界面风格定义、对比页、应用截图
 resources/                运行时资源（不纳入版本控制，见下）
 ```
