@@ -265,19 +265,37 @@ npm run release:install
 
 # 3. 提交并打 tag（release.ps1 可用 -NoGit 跳过这一步自己控制）
 git push origin main
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.2
+git push origin v1.2.2
 
-# 4. 在 GitHub 上创建 Release，上传安装包
+# 4. 创建 Release（自动从 VERSIONS.md 取说明并写入安装包 SHA256）
 $env:GITHUB_TOKEN = '<token>'
-node scripts/upload-release.js v1.1.0 --archive "$env:USERPROFILE\Desktop\ADB搞机助手"
+node scripts/create-release.js v1.2.2 --title "ADB搞机助手 V1.2.2 · 本版主题"
+
+# 5. 上传安装包（幂等，已存在会跳过）
+node scripts/upload-release.js v1.2.2
 ```
 
-### 关于上传脚本
+**如果中间有版本没单独发过 Release**，用 `--also` 把它们的说明一并带上，
+否则从更早版本升级的用户不知道中间改了什么：
 
-`scripts/upload-release.js` 显式使用 ASCII 附件名
+```powershell
+node scripts/create-release.js v1.2.2 --also 1.2.1 --also 1.2.0
+```
+
+### 关于发布脚本
+
+发布拆成两个脚本，因为安装包有 500 MB、上传慢且可能中断，
+而说明文字可以随时改——不该为了改一段话重传安装包。
+
+| 脚本 | 职责 |
+|---|---|
+| `scripts/create-release.js` | 建 Release、从 `VERSIONS.md` 取说明、写入安装包 SHA256 |
+| `scripts/upload-release.js` | 上传附件，幂等（同名已存在则跳过）|
+
+`upload-release.js` 显式使用 ASCII 附件名
 （`ADB-GaoJi-Assistant-V<版本>-Setup.exe`）。原因：GitHub 上传附件时会**剥离
-非 ASCII 文件名**，`ADB搞机助手_V1.1.0_安装包.exe` 会变成 `ADB._V1.1.0_.exe`，
+非 ASCII 文件名**，`ADB搞机助手_V1.2.2_安装包.exe` 会变成 `ADB._V1.2.2_.exe`，
 与 README、`VERSIONS.md` 和自动更新配置里写的名字全部对不上。
 
 脚本是幂等的：同名附件已存在时直接跳过，重跑不会重复占用带宽。
