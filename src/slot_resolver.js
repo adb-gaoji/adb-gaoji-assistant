@@ -24,6 +24,17 @@
   /** 合法的槽位取值。空串表示"不带槽位后缀"（单槽机型）。 */
   const VALID_SLOTS = ['', 'a', 'b'];
 
+  /**
+   * 在 A/B 机型上**必然**带槽位后缀的分区。
+   *
+   * 这些分区在双槽设备上一定以 `boot_a` / `boot_b` 形式存在，
+   * 写裸名 fastboot 会报 `unknown partition`。因此缺槽位时可以提前拦下。
+   *
+   * 不在这个列表里的分区（recovery、misc 等）在部分机型上确实是裸名，
+   * 所以不拦——宁可放过也不要误拦正常的刷写。
+   */
+  const SLOT_REQUIRED_PARTITIONS = ['boot', 'init_boot', 'vendor_boot', 'vbmeta', 'dtbo'];
+
   /** 允许出现在分区名里的字符。设备上的分区名不会超出这个范围。 */
   const PARTITION_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -82,16 +93,19 @@
   }
 
   /**
-   * 结合设备信息，把用户的「分区 + 槽位」选择解析成最终写入目标，并给出提示语。
+   * 结合设备信息，把用户的「分区 + 槽位」选择解析成最终写入目标。
    *
    * `device` 描述设备当前状态：
    *   - `isAbDevice`  : 是否为 A/B 双槽机型（由 current-slot 能否读到决定）
    *   - `currentSlot` : 当前活动槽位 'a' / 'b'，读不到为空串
    *   - `available`   : 设备上确实存在的分区名数组（可选，来自 flash-slot-info）
    *
+   * 界面现在只传 'a' / 'b'（或槽位字段隐藏时为空），
+   * 'current' 仍然支持是为了兼容主进程等其它调用方。
+   *
    * 返回值：
    *   - `partition` : 最终要写入的分区名
-   *   - `targetsCurrentSlot` : 是否写向当前活动槽位
+   *   - `targetIsOtherSlot` : 是否写向当前活动槽位以外的槽
    *   - `notes`     : 给用户看的提示行（数组）
    *   - `blocked`   : 拦下来的原因；非空时调用方不应继续写入
    */
@@ -99,38 +113,55 @@
     const opts = options || {};
     const device = opts.device || {};
     const requestedSlot = String(opts.slot === null || opts.slot === undefined ? '' : opts.slot).trim().toLowerCase();
+    const base = String(opts.partition === null || opts.partition === undefined ? '' : opts.partition).trim();
     const notes = [];
 
-    // ---- 单槽机型：不接受槽位后缀 ----
-    if (device.isAbDevice === false && (requestedSlot === 'a' || requestedSlot === 'b')) {
-      return {
-        partition: resolvePartitionName(opts.partition, ''),
-        targetIsOtherSlot: false,
-        notes,
-        blocked: '当前设备不是 A/B 双槽机型（读不到 current-slot），不能写入带槽位后缀的分区。请确认设备已进入 Fastboot，或改选“不带槽位后缀”。'
-      };
-    }
-
-    // ---- 'current' 需要设备配合解析 ----
-    let slot = requestedSlot;
-    if (requestedSlot === 'current') {
+    // ---- 先把用户的选择归一成一个具体槽位（或空）----
+    let slot = '';
+    if (requestedSlot === 'a' || requestedSlot === 'b') {
+      slot = requestedSlot;
+    } else if (requestedSlot === 'current') {
       const current = normalizeSlot(device.currentSlot);
       if (!current) {
         return {
-          partition: resolvePartitionName(opts.partition, ''),
+          partition: resolvePartitionName(base, ''),
           targetIsOtherSlot: false,
           notes,
-          blocked: '未能读取设备当前活动槽位（可能需要先进入 Fastboot）。请手动选择槽位 A 或 B，避免写错分区。'
+          blocked: '未能读取设备当前活动槽位（可能需要先进入 Fastboot）。请选择槽位 A 或 B，避免写错分区。'
         };
       }
       slot = current;
       notes.push(`已按设备当前活动槽位解析为 ${current.toUpperCase()}。`);
     }
+    // 其余取值（'none' / 空）都表示"不带槽位后缀"
 
-    const partition = resolvePartitionName(opts.partition, slot);
+    // ---- 单槽机型不接受槽位后缀 ----
+    if (device.isAbDevice === false && slot) {
+      return {
+        partition: resolvePartitionName(base, ''),
+        targetIsOtherSlot: false,
+        notes,
+        blocked: '当前设备不是 A/B 双槽机型（读不到 current-slot），不能写入带槽位后缀的分区。请确认设备已进入 Fastboot。'
+      };
+    }
+
+    const partition = resolvePartitionName(base, slot);
     const validation = validatePartitionName(partition);
     if (!validation.valid) {
       return { partition, targetIsOtherSlot: false, notes, blocked: validation.reason };
+    }
+
+    // ---- A/B 机型上"必然带槽位后缀"的分区，缺槽位就拦下 ----
+    // 这些分区在 A/B 机型上一定以 boot_a / boot_b 形式存在，
+    // 写裸名 fastboot 会报 unknown partition，提前拦下比中途失败好。
+    // 不在此列表的分区（如 recovery、misc）在部分机型上确实是裸名，放行。
+    if (device.isAbDevice === true && !slot && !hasSlotSuffix(base) && SLOT_REQUIRED_PARTITIONS.includes(base)) {
+      return {
+        partition,
+        targetIsOtherSlot: false,
+        notes,
+        blocked: `该设备是 A/B 双槽机型，${base} 在设备上是 ${base}_a / ${base}_b，请选择要写入的槽位。`
+      };
     }
 
     // ---- 设备上不存在该分区时提前拦下 ----

@@ -143,9 +143,17 @@ const ACTION_FORMS = {
   //   3) 界面按钮写的是"选择 A/B 槽位对应的 boot 镜像"，但没有任何槽位选择。
   // 现在拆成"分区类型 + 槽位"两个下拉，由程序拼装最终分区名，
   // 同时保留"自定义"入口给非常规分区（如 vendor_boot、recovery）。
+  // 刷入 IMG：槽位只给 A / B 两个按钮。
+  //
+  // 此前槽位是四选一下拉（当前活动槽位 / A / B / 不带后缀），
+  // 对用户来说是在做一道本不该由他做的选择题：
+  //   - "当前活动槽位"是最常用的，那就直接默认选中，不必让人选；
+  //   - "不带后缀"只对单槽机型有意义，而单槽机型由程序判断更可靠
+  //     （读不到 current-slot 就是单槽），不该让用户自己判断机型。
+  // 现在只留 A / B，默认落在设备当前活动槽上，并在下方标出当前是哪个槽。
   'flash-image': {
     title: '刷入 IMG',
-    description: '必须确认镜像与目标分区、机型和系统版本完全匹配。A/B 机型请选对槽位——写错槽不会生效，覆盖备槽还会失去回滚能力。',
+    description: '选好分区与槽位后选择镜像。A/B 机型请选对槽位——写错槽不会生效，覆盖备槽还会失去回滚能力。',
     fields: [
       {
         name: 'partition',
@@ -158,34 +166,18 @@ const ACTION_FORMS = {
           ['vendor_boot', 'vendor_boot（厂商内核模块）'],
           ['vbmeta', 'vbmeta（校验与 AVB）'],
           ['dtbo', 'dtbo（设备树叠加）'],
-          ['recovery', 'recovery（旧机型恢复分区）'],
-          ['custom', '自定义分区名…']
+          ['recovery', 'recovery（旧机型恢复分区）']
         ]
-      },
-      {
-        name: 'customPartition',
-        label: '自定义分区名',
-        value: '',
-        // 注意：pattern 会按 Chromium 的 v 模式（unicodeSets）编译，
-        // 该模式下字符类里**不能出现字面连字符**，`-`、`\-`、`[-...]` 全部非法，
-        // 必须写成 `\x2d`。写错的后果不是报错，而是整个 pattern 被静默忽略、
-        // 表单校验失效（只有控制台留一行错误）。
-        // scripts/audit-form-patterns.js 会在 CI 里挡住这类写法。
-        pattern: '[A-Za-z0-9_\\x2d]+',
-        required: false,
-        hint: '仅在上面选“自定义”时填写，可带槽位后缀，例如 system_a'
       },
       {
         name: 'slot',
         label: '目标槽位',
-        type: 'select',
-        value: 'current',
-        options: [
-          ['current', '当前活动槽位（推荐，自动读取）'],
-          ['a', '槽位 A'],
-          ['b', '槽位 B'],
-          ['none', '不带槽位后缀（单槽机型）']
-        ]
+        type: 'segmented',
+        // 实际默认值在渲染时按设备当前活动槽位填入（见 collectActionPayload）
+        value: '',
+        options: [['a', 'A 槽'], ['b', 'B 槽']],
+        // 单槽机型（读不到 current-slot）时整个字段隐藏，由程序用裸分区名
+        hideWhenNoSlot: true
       }
     ]
   },
@@ -1543,60 +1535,76 @@ function collectActionPayload(action) {
   fields.replaceChildren();
 
   for (const field of config.fields) {
+    // 槽位字段按设备实际状态决定默认值与是否显示：
+    //   - 能读到 current-slot -> A/B 机型，默认选中当前槽，并标出是哪个
+    //   - 读不到 -> 单槽机型（或不在 Fastboot），整个字段不显示，
+    //     由程序用不带后缀的分区名，用户不必自己判断机型
+    let resolved = field;
+    if (field.name === 'slot') {
+      if (field.hideWhenNoSlot && !latestDeviceSlot) continue;
+      resolved = {
+        ...field,
+        value: latestDeviceSlot || field.value,
+        hint: latestDeviceSlot
+          ? `当前活动槽位是 ${latestDeviceSlot.toUpperCase()}（已默认选中）`
+          : field.hint
+      };
+    }
+
     const label = document.createElement('label');
     label.className = 'action-field';
     const caption = document.createElement('span');
-    caption.textContent = field.label;
+    caption.textContent = resolved.label;
     let control;
-    if (field.type === 'select') {
+
+    if (resolved.type === 'segmented') {
+      // 按钮组：选项少时比下拉直观（点一下即可，不用展开列表）
+      control = document.createElement('div');
+      control.className = 'segmented-control action-segmented';
+      for (const [value, text] of resolved.options) {
+        const option = document.createElement('label');
+        option.className = 'segment';
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = resolved.name;
+        radio.value = value;
+        radio.checked = value === resolved.value;
+        const caption2 = document.createElement('span');
+        caption2.textContent = text;
+        option.append(radio, caption2);
+        // 选中态跟随 radio（CSS 里用 :has 或这里同步 class）
+        const sync = () => option.classList.toggle('active', radio.checked);
+        radio.addEventListener('change', sync);
+        sync();
+        control.appendChild(option);
+      }
+    } else if (resolved.type === 'select') {
       control = document.createElement('select');
-      for (const [value, text] of field.options) {
+      for (const [value, text] of resolved.options) {
         const option = document.createElement('option');
         option.value = value;
         option.textContent = text;
-        option.selected = value === field.value;
+        option.selected = value === resolved.value;
         control.appendChild(option);
       }
+      control.name = resolved.name;
     } else {
       control = document.createElement('input');
       control.type = 'text';
-      control.value = field.value || '';
-      if (field.pattern) control.pattern = field.pattern;
-      control.required = field.required !== false;
+      control.value = resolved.value || '';
+      if (resolved.pattern) control.pattern = resolved.pattern;
+      control.required = resolved.required !== false;
+      control.name = resolved.name;
     }
-    control.name = field.name;
+
     label.append(caption, control);
-    if (field.hint) {
+    if (resolved.hint) {
       const hint = document.createElement('small');
-      hint.textContent = field.hint;
+      hint.textContent = resolved.hint;
       label.appendChild(hint);
     }
-    // 记录字段与所属分区下拉的绑定，供下方联动使用
-    if (field.name === 'customPartition' || field.name === 'slot') {
-      label.dataset.field = field.name;
-      label.dataset.dependsOn = 'partition';
-    }
+    label.dataset.field = resolved.name;
     fields.appendChild(label);
-  }
-
-  // 分区选"自定义"时才显示自定义输入框；其它分区不需要它。
-  // 这样界面上不会同时出现互相矛盾的选项。
-  const syncFieldVisibility = () => {
-    const partitionControl = fields.querySelector('[name="partition"]');
-    const customLabel = fields.querySelector('label[data-field="customPartition"]');
-    const slotLabel = fields.querySelector('label[data-field="slot"]');
-    const customInput = customLabel?.querySelector('input');
-    const isCustom = partitionControl?.value === 'custom';
-    if (customLabel) {
-      customLabel.hidden = !isCustom;
-      if (customInput) customInput.required = isCustom;
-    }
-    if (slotLabel) slotLabel.hidden = false;
-  };
-  const partitionControl = fields.querySelector('[name="partition"]');
-  if (partitionControl) {
-    partitionControl.addEventListener('change', syncFieldVisibility);
-    syncFieldVisibility();
   }
 
   return new Promise((resolve) => {
@@ -1622,7 +1630,7 @@ function collectActionPayload(action) {
 /**
  * 表单值 → 后端 payload 的收尾处理。
  *
- * 目前只有 flash-image 需要加工：把「分区类型 + 槽位」拼成真实分区名。
+ * flash-image 需要把「分区 + 槽位」拼成设备上的真实分区名。
  * 拼装规则复用 slot_resolver.js——与主进程同一份实现，
  * 避免出现"界面显示 boot_a、实际写入 boot_b"这类两侧不一致。
  */
@@ -1631,10 +1639,7 @@ function resolveActionPayload(action, values) {
   if (action !== 'flash-image') return payload;
 
   const resolver = window.SLOT_RESOLVER;
-  const base = payload.partition === 'custom'
-    ? String(payload.customPartition || '').trim()
-    : String(payload.partition || 'boot');
-  delete payload.customPartition;
+  const base = String(payload.partition || 'boot');
 
   // resolver 缺失属于加载顺序错误，宁可让它显式失败也不静默拼错分区
   if (!resolver) {

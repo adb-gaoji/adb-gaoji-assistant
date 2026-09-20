@@ -142,3 +142,50 @@ test('resolveFlashTarget 单槽机型且不带后缀时正常放行', () => {
   assert.equal(result.blocked, '');
   assert.equal(result.partition, 'boot');
 });
+
+test('A/B 机型缺槽位时拦下，并说明该分区带后缀', () => {
+  // 界面简化后槽位只剩 A/B 两个按钮，正常情况不会缺；
+  // 但主进程等调用方仍可能传空值，此时必须拦下——
+  // A/B 机型上 boot 一定是 boot_a / boot_b，写裸名必然 unknown partition。
+  const result = resolveFlashTarget({
+    partition: 'boot',
+    slot: '',
+    device: { isAbDevice: true, currentSlot: 'a' }
+  });
+  assert.notEqual(result.blocked, '');
+  assert.match(result.blocked, /A\/B 双槽机型/);
+  assert.match(result.blocked, /boot_a \/ boot_b/);
+});
+
+test('A/B 机型缺槽位：init_boot / vbmeta 等同样拦下', () => {
+  for (const part of ['init_boot', 'vendor_boot', 'vbmeta', 'dtbo']) {
+    const result = resolveFlashTarget({
+      partition: part,
+      slot: '',
+      device: { isAbDevice: true, currentSlot: 'a' }
+    });
+    assert.notEqual(result.blocked, '', `${part} 应被拦下`);
+  }
+});
+
+test('A/B 机型缺槽位：recovery 这类裸名分区不误拦', () => {
+  // recovery / misc 在部分 A/B 机型上确实是裸分区名，
+  // 一律拦下会挡住正常刷写，所以只对"必然带后缀"的分区严格。
+  const result = resolveFlashTarget({
+    partition: 'recovery',
+    slot: '',
+    device: { isAbDevice: true, currentSlot: 'a' }
+  });
+  assert.equal(result.blocked, '');
+  assert.equal(result.partition, 'recovery');
+});
+
+test('A/B 机型分区名已带后缀时不再要求槽位', () => {
+  const result = resolveFlashTarget({
+    partition: 'boot_a',
+    slot: '',
+    device: { isAbDevice: true, currentSlot: 'a' }
+  });
+  assert.equal(result.blocked, '');
+  assert.equal(result.partition, 'boot_a');
+});

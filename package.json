@@ -1,6 +1,6 @@
 {
   "name": "adb-gaoji-assistant-next",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "ADB搞机助手 - Android ADB/Fastboot/Magisk desktop utility",
   "main": "src/main.js",
   "author": "ADB搞机助手 contributors",

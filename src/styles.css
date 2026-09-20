@@ -718,6 +718,14 @@ button:disabled {
 .segment { min-height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text-secondary); background: var(--surface-raised); font-size: 12px; font-weight: 600; }
 .segment:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .segment.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent); }
+
+/* 参数弹窗里的按钮组：选项少时比下拉直观（点一下即可，不用展开列表）。
+   用 radio 承载值，FormData 能直接收集，选中态由 .active 呈现。 */
+.action-segmented { margin-top: 4px; }
+.action-segmented .segment { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 16px; font-size: 13px; cursor: pointer; }
+.action-segmented .segment input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.action-segmented .segment:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.action-segmented .segment.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); font-weight: 700; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent); }
 .flash-console { min-height: 270px; margin: 0; padding: 13px; overflow: auto; border: 0; border-radius: 2px; color: #d7e5ff; background: #111a2b; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
 
 /* 刷机进度：刷机时用户盯着这个页面，进度必须在这里可见，
