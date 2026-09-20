@@ -1,0 +1,45 @@
+feat(ui): 刷机分区也简化，只留 boot / init_boot 并按机型自动选
+
+上一版简化了槽位，这一版把分区也简化了。
+
+问题
+
+「刷入 Boot」的分区下拉里有六项，全是用户分不清的技术名词：
+
+  boot（内核 / ramdisk）
+  init_boot（Android 13+ 的 ramdisk）
+  vendor_boot（厂商内核模块）
+  vbmeta（校验与 AVB）
+  dtbo（设备树叠加）
+  recovery（旧机型恢复分区）
+
+改动
+
+- 分区只剩 boot / init_boot 两个按钮，并按手机 Android 版本自动选中：
+  Android 13 起 ramdisk 从 boot 移到 init_boot，所以 13+ 默认 init_boot，
+  更早默认 boot。弹窗提示"你的手机是 Android 14，已默认选中 init_boot
+  （不确定就用默认值）"——用户只需确认或改成另一个。
+
+- 新增「刷入其他分区」按钮，承接 vbmeta / dtbo / vendor_boot / recovery，
+  保留完整下拉与手动输入分区名。
+
+- 原先「刷入 Boot」与「刷入 init_boot」两个按钮合并为一个
+  （它们的弹窗内容本来就一样）。
+
+- 表单新增 showWhen 条件显示（选"其他"才出现分区名输入框）
+  与 dynamicDefault（按设备状态填默认值）。
+
+说明
+
+只改界面呈现，写入逻辑与校验完全不变：两个入口共用同一套执行代码
+（main.js 的 case 'flash-image': case 'flash-image-advanced':），
+分区与槽位拼装仍是同一份实现。
+
+验证
+
+- 测试 117 项全过；audit:actions / audit:danger / audit:patterns 全绿。
+- 界面验证：Android 13/14 默认 init_boot、Android 11 默认 boot；
+  「其他分区」入口下拉含自定义项，输入框选"其他"才出现。
+- 真机验证（XT2335-3 / Android 14 / 槽位 A）：默认选中 init_boot + 槽位 A，
+  点确定解析为 init_boot_a。
+- 已构建并安装 V1.2.4，窗口正常、日志无错误。

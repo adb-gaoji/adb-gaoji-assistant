@@ -25,7 +25,7 @@
 GitHub 直连慢的话可以用镜像加速，或者用下载工具续传。下完建议校验一下：
 
 ```powershell
-Get-FileHash .\ADB-GaoJi-Assistant-V1.2.3-Setup.exe -Algorithm SHA256
+Get-FileHash .\ADB-GaoJi-Assistant-V1.2.4-Setup.exe -Algorithm SHA256
 ```
 
 和 Release 页面公布的 SHA256 对比，一致才说明文件完整。

@@ -808,7 +808,10 @@ async function dispatchAction(action, payload = {}) {
       if (selected.canceled || !selected.filePaths[0]) return { code: 1, stdout: '', stderr: '已取消' };
       return fastboot(['boot', selected.filePaths[0]], { log: sendLog });
     }
-    case 'flash-image': {
+    // 「刷入 Boot」与「刷入其他分区」共用同一套执行逻辑：
+    // 区别只在界面上暴露哪些分区选项，写入路径与校验完全一致。
+    case 'flash-image':
+    case 'flash-image-advanced': {
       // 目标分区名由 slot_resolver 统一拼装，规则与界面侧完全一致。
       //
       // 三种入参形态都支持：

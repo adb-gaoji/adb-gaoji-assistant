@@ -6,6 +6,41 @@
 
 ---
 
+## [1.2.4] - 2026-09-19
+
+刷机分区简化：不再需要分辨 boot / init_boot / vendor_boot / vbmeta / dtbo / recovery。
+
+### 改动
+- **「刷入 Boot」的分区只剩 boot / init_boot 两个按钮，并按机型自动选中**。
+  Android 13 起 ramdisk 从 `boot` 移到 `init_boot`，这个判断由程序做：
+
+  | 手机 Android 版本 | 默认选中 |
+  |---|---|
+  | 13 及以上 | `init_boot` |
+  | 12 及以下 | `boot` |
+
+  弹窗下方提示「你的手机是 Android 14，已默认选中 init_boot（不确定就用默认值）」。
+
+- **新增「刷入其他分区」按钮**，承接原先混在一起的
+  vbmeta / dtbo / vendor_boot / recovery，保留完整下拉与手动输入分区名。
+- 原先「刷入 Boot」与「刷入 init_boot」两个按钮合并为一个。
+- 表单新增 `showWhen` 条件显示（选「其他」才出现分区名输入框）
+  与 `dynamicDefault`（按设备状态填默认值）。
+
+### 说明
+- 只改界面呈现，写入逻辑与校验完全不变：两个入口共用同一套执行代码
+  （`main.js` 的 `case 'flash-image': case 'flash-image-advanced':`）。
+- 分区与槽位拼装仍是同一份实现，不会出现两侧不一致。
+
+### 验证
+- 测试 117 项全过；`audit:actions`、`audit:danger`、`audit:patterns` 全绿。
+- 界面验证：Android 13/14 默认 `init_boot`、Android 11 默认 `boot`；
+  「其他分区」入口的下拉含自定义项，输入框选「其他」才出现。
+- 真机验证（XT2335-3 / Android 14 / 槽位 A）：
+  默认选中 `init_boot` + 槽位 A，点确定解析为 `init_boot_a`。
+
+---
+
 ## [1.2.3] - 2026-09-19
 
 简化「刷入 Boot」的槽位选择。

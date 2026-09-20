@@ -143,40 +143,77 @@ const ACTION_FORMS = {
   //   3) 界面按钮写的是"选择 A/B 槽位对应的 boot 镜像"，但没有任何槽位选择。
   // 现在拆成"分区类型 + 槽位"两个下拉，由程序拼装最终分区名，
   // 同时保留"自定义"入口给非常规分区（如 vendor_boot、recovery）。
-  // 刷入 IMG：槽位只给 A / B 两个按钮。
+  // 刷入 IMG。
   //
-  // 此前槽位是四选一下拉（当前活动槽位 / A / B / 不带后缀），
-  // 对用户来说是在做一道本不该由他做的选择题：
-  //   - "当前活动槽位"是最常用的，那就直接默认选中，不必让人选；
-  //   - "不带后缀"只对单槽机型有意义，而单槽机型由程序判断更可靠
-  //     （读不到 current-slot 就是单槽），不该让用户自己判断机型。
-  // 现在只留 A / B，默认落在设备当前活动槽上，并在下方标出当前是哪个槽。
+  // 分区只给 boot / init_boot 两个按钮，并按手机 Android 版本自动选中：
+  // Android 13 起 ramdisk 从 boot 移到了 init_boot，但用户不需要知道这件事，
+  // 更不该面对 boot / init_boot / vendor_boot / vbmeta / dtbo / recovery
+  // 这一串看不懂的名字。需要刷非常规分区的走「刷入其他分区」按钮
+  // （见 ACTION_FORMS['flash-image-advanced']）。
+  //
+  // 槽位同理只给 A / B，默认落在设备当前活动槽上。
   'flash-image': {
-    title: '刷入 IMG',
-    description: '选好分区与槽位后选择镜像。A/B 机型请选对槽位——写错槽不会生效，覆盖备槽还会失去回滚能力。',
+    title: '刷入 Boot',
+    description: '默认值已按你的手机选好，不确定就直接点确定。A/B 机型请选对槽位——写错槽不会生效。',
     fields: [
       {
         name: 'partition',
         label: '分区',
-        type: 'select',
-        value: 'boot',
+        type: 'segmented',
+        // 实际默认值在渲染时按 Android 版本填入（见 collectActionPayload）
+        value: '',
         options: [
-          ['boot', 'boot（内核 / ramdisk）'],
-          ['init_boot', 'init_boot（Android 13+ 的 ramdisk）'],
-          ['vendor_boot', 'vendor_boot（厂商内核模块）'],
-          ['vbmeta', 'vbmeta（校验与 AVB）'],
-          ['dtbo', 'dtbo（设备树叠加）'],
-          ['recovery', 'recovery（旧机型恢复分区）']
-        ]
+          ['boot', 'boot'],
+          ['init_boot', 'init_boot']
+        ],
+        dynamicDefault: 'partition'
       },
       {
         name: 'slot',
         label: '目标槽位',
         type: 'segmented',
-        // 实际默认值在渲染时按设备当前活动槽位填入（见 collectActionPayload）
         value: '',
         options: [['a', 'A 槽'], ['b', 'B 槽']],
-        // 单槽机型（读不到 current-slot）时整个字段隐藏，由程序用裸分区名
+        hideWhenNoSlot: true
+      }
+    ]
+  },
+  // 非常规分区：保留完整下拉与自定义输入，给确实需要的人用。
+  'flash-image-advanced': {
+    title: '刷入其他分区',
+    description: '用于 vbmeta、dtbo、recovery 等非常规分区。请确保分区名与镜像完全匹配。',
+    fields: [
+      {
+        name: 'partition',
+        label: '分区',
+        type: 'select',
+        value: 'vbmeta',
+        options: [
+          ['vbmeta', 'vbmeta（校验 / AVB）'],
+          ['dtbo', 'dtbo（设备树叠加）'],
+          ['vendor_boot', 'vendor_boot（厂商内核模块）'],
+          ['recovery', 'recovery（旧机型恢复分区）'],
+          ['custom', '其他（手动输入分区名）']
+        ]
+      },
+      {
+        name: 'customPartition',
+        label: '分区名',
+        value: '',
+        // pattern 会按 Chromium 的 v 模式编译，该模式下字符类里不能出现
+        // 字面连字符，必须写 \x2d。写错的后果是整个 pattern 被静默忽略、
+        // 校验失效（只有控制台留一行错误）。scripts/audit-form-patterns.js
+        // 会在 CI 里挡住这类写法。
+        pattern: '[A-Za-z0-9_\\x2d]+',
+        required: false,
+        showWhen: ['partition', 'custom']
+      },
+      {
+        name: 'slot',
+        label: '目标槽位',
+        type: 'segmented',
+        value: '',
+        options: [['a', 'A 槽'], ['b', 'B 槽']],
         hideWhenNoSlot: true
       }
     ]
@@ -202,6 +239,15 @@ let latestDeviceSerial = '';
  * 就已经拿到，所以在这里作为运行时状态缓存，由状态刷新写入。
  */
 let latestDeviceSlot = '';
+
+/**
+ * 设备 Android 版本（如 '14'，读不到时为空串）。
+ *
+ * 用来决定刷 boot 时默认选哪个分区：
+ * Android 13 起 ramdisk 从 boot 移到了 init_boot，
+ * 大多数人不需要知道这件事，程序替他选好即可。
+ */
+let latestDeviceAndroid = '';
 let logBuffer = '';
 let lastErrorMessage = '';
 const taskState = { current: null, history: [] };
@@ -557,6 +603,7 @@ function updateStatusUI(status) {
   setText('connectionModeText', mode, '未连接');
   latestDeviceSlot = String(status.props?.slot || '').replace(/^_/, '').toLowerCase();
   if (!/^[ab]$/.test(latestDeviceSlot)) latestDeviceSlot = '';
+  latestDeviceAndroid = String(status.props?.android || '').trim();
   setText('slotText', latestDeviceSlot ? latestDeviceSlot.toUpperCase() : '', '-');
   $('recommendationTitle').textContent = mode === '未连接' ? '先连接手机并完成 USB 调试授权' : mode === '未授权' ? '请在手机上确认 USB 调试授权' : mode === 'Fastboot' ? '设备已进入 Fastboot，请先核对机型和操作目标' : '设备已连接，可以选择需要执行的功能';
   $('recommendationText').textContent = mode === '未连接' ? '连接向导会区分未连接、未授权、ADB 和 Fastboot 状态。' : status.deviceText || '设备状态已更新。';
@@ -1535,11 +1582,12 @@ function collectActionPayload(action) {
   fields.replaceChildren();
 
   for (const field of config.fields) {
-    // 槽位字段按设备实际状态决定默认值与是否显示：
+    let resolved = field;
+
+    // 槽位：按设备实际状态决定默认值与是否显示
     //   - 能读到 current-slot -> A/B 机型，默认选中当前槽，并标出是哪个
     //   - 读不到 -> 单槽机型（或不在 Fastboot），整个字段不显示，
     //     由程序用不带后缀的分区名，用户不必自己判断机型
-    let resolved = field;
     if (field.name === 'slot') {
       if (field.hideWhenNoSlot && !latestDeviceSlot) continue;
       resolved = {
@@ -1549,6 +1597,27 @@ function collectActionPayload(action) {
           ? `当前活动槽位是 ${latestDeviceSlot.toUpperCase()}（已默认选中）`
           : field.hint
       };
+    }
+
+    // 分区（常用路径）：按 Android 版本自动选中 boot 或 init_boot。
+    // Android 13 起 ramdisk 从 boot 移到 init_boot，这个判断由程序做，
+    // 用户只需确认或改成另一个。
+    if (field.dynamicDefault === 'partition') {
+      const androidMajor = Number(String(latestDeviceAndroid || '').split('.')[0]) || 0;
+      const prefer = androidMajor >= 13 ? 'init_boot' : 'boot';
+      resolved = {
+        ...field,
+        value: prefer,
+        hint: androidMajor
+          ? `你的手机是 Android ${latestDeviceAndroid}，已默认选中 ${prefer}（不确定就用默认值）`
+          : '不确定选哪个就用默认值'
+      };
+    }
+
+    // 条件显示：某些字段只在另一个字段取特定值时才出现
+    if (Array.isArray(field.showWhen)) {
+      const [otherName, ...allowed] = field.showWhen;
+      resolved = { ...resolved, _showWhen: { otherName, allowed } };
     }
 
     const label = document.createElement('label');
@@ -1604,8 +1673,30 @@ function collectActionPayload(action) {
       label.appendChild(hint);
     }
     label.dataset.field = resolved.name;
+    if (resolved._showWhen) {
+      label.dataset.showWhenField = resolved._showWhen.otherName;
+      label.dataset.showWhenValues = resolved._showWhen.allowed.join(',');
+    }
     fields.appendChild(label);
   }
+
+  // 条件显示联动：例如"其他（手动输入分区名）"才显示分区名输入框。
+  // 放在字段都渲染完之后统一绑定，避免依赖字段顺序。
+  const syncConditionalFields = () => {
+    for (const label of fields.querySelectorAll('label[data-show-when-field]')) {
+      const other = fields.querySelector(`[name="${label.dataset.showWhenField}"]`);
+      const allowed = String(label.dataset.showWhenValues || '').split(',');
+      const visible = other ? allowed.includes(other.value) : false;
+      label.hidden = !visible;
+      const input = label.querySelector('input');
+      if (input) input.required = visible;
+    }
+  };
+  for (const label of fields.querySelectorAll('label[data-show-when-field]')) {
+    const other = fields.querySelector(`[name="${label.dataset.showWhenField}"]`);
+    if (other) other.addEventListener('change', syncConditionalFields);
+  }
+  syncConditionalFields();
 
   return new Promise((resolve) => {
     let settled = false;
@@ -1630,16 +1721,20 @@ function collectActionPayload(action) {
 /**
  * 表单值 → 后端 payload 的收尾处理。
  *
- * flash-image 需要把「分区 + 槽位」拼成设备上的真实分区名。
- * 拼装规则复用 slot_resolver.js——与主进程同一份实现，
+ * flash-image / flash-image-advanced 需要把「分区 + 槽位」拼成设备上的
+ * 真实分区名。拼装规则复用 slot_resolver.js——与主进程同一份实现，
  * 避免出现"界面显示 boot_a、实际写入 boot_b"这类两侧不一致。
  */
 function resolveActionPayload(action, values) {
   const payload = { ...values };
-  if (action !== 'flash-image') return payload;
+  if (action !== 'flash-image' && action !== 'flash-image-advanced') return payload;
 
   const resolver = window.SLOT_RESOLVER;
-  const base = String(payload.partition || 'boot');
+  // advanced 模式下分区可能是"其他（手动输入）"，取输入框的值
+  const base = payload.partition === 'custom'
+    ? String(payload.customPartition || '').trim()
+    : String(payload.partition || 'boot');
+  delete payload.customPartition;
 
   // resolver 缺失属于加载顺序错误，宁可让它显式失败也不静默拼错分区
   if (!resolver) {

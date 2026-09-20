@@ -8,7 +8,7 @@
 谷歌三件套装了不能用**——闪退、停用、重启失效一条流程修完；
 另覆盖设备诊断、Root 与面具、分区提取、固件刷机、应用管理、无线投屏与救砖修复。
 
-[![Version](https://img.shields.io/badge/version-1.2.3-blue?style=flat-square)](VERSIONS.md)
+[![Version](https://img.shields.io/badge/version-1.2.4-blue?style=flat-square)](VERSIONS.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4?style=flat-square)](#环境要求)
 [![Electron](https://img.shields.io/badge/Electron-41.2.1-47848f?style=flat-square&logo=electron&logoColor=white)](package.json)
 [![Node](https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=node.js&logoColor=white)](#环境要求)
@@ -277,7 +277,8 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 ### 🧩 分区与镜像
 - 关键分区备份（boot / vbmeta / dtbo 等）
 - 分区镜像提取与刷写
-- **刷入 Boot / init_boot 可选 A/B 槽位**（分区与槽位分离，自动拼装分区名）
+- **刷入 Boot 一步到位**：分区与 A/B 槽位都已按机型自动选好
+- **刷入其他分区**：vbmeta / dtbo / recovery 等，可手动指定分区名
 - **检测分区与槽位**：列出设备上真实存在的可写分区，选镜像前先确认
 - 写向非活动槽时明确提醒（避免刷了不生效或覆盖回滚能力）
 - `payload.bin` 解包
@@ -377,7 +378,7 @@ MIT 许可，没有闭源组件。源码里**不加密、不混淆**，110 个�
 **这是给普通用户的推荐方式**——下载、安装、连手机，三步就能用，不需要 Node.js，
 也不需要做任何额外配置。
 
-1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.2.3-Setup.exe`
+1. 从 [Releases](https://github.com/adb-gaoji/adb-gaoji-assistant/releases/latest) 下载 `ADB-GaoJi-Assistant-V1.2.4-Setup.exe`
 2. 双击安装（支持自选安装目录，会创建桌面与开始菜单快捷方式）
 3. 用数据线连接手机，打开 USB 调试，应用会自动识别
 

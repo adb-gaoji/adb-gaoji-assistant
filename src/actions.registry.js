@@ -20,7 +20,7 @@
 
   /** 会被写入设备、应用状态或系统分区的动作，执行前必须二次确认。 */
   const DANGEROUS_ACTIONS = [
-    'firmware-flash', 'flash-image', 'fastboot-set-active', 'lenovo-unlock-go', 'moto-bl-unlock', 'reboot-fastbootd',
+    'firmware-flash', 'flash-image', 'flash-image-advanced', 'fastboot-set-active', 'lenovo-unlock-go', 'moto-bl-unlock', 'reboot-fastbootd',
     'gms-uninstall', 'gms-fix-crash', 'gms-persistent-fix', 'uninstall-package', 'uninstall-packages-batch',
     'clear-app-data', 'freeze-app-user0', 'freeze-apps-user0-batch', 'clear-storage-cache', 'clear-storage-junk',
     'clear-storage-photos', 'clear-storage-videos', 'bootanim-install-zip', 'bootanim-install-checked',
@@ -37,7 +37,7 @@
 
   /** 需要设备处于 Fastboot 模式才能执行。 */
   const FASTBOOT_REQUIRED_ACTIONS = [
-    'firmware-flash', 'flash-image', 'boot-image', 'fastboot-set-active', 'fastboot-continue',
+    'firmware-flash', 'flash-image', 'flash-image-advanced', 'boot-image', 'fastboot-set-active', 'fastboot-continue',
     'fastboot-getvar-all', 'fastboot-unlock-status', 'lenovo-unlock-go', 'moto-bl-unlock', 'reboot-fastbootd',
     'flash-slot-info'
   ];
