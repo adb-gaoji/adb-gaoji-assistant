@@ -1630,6 +1630,7 @@ function collectActionPayload(action) {
       // 按钮组：选项少时比下拉直观（点一下即可，不用展开列表）
       control = document.createElement('div');
       control.className = 'segmented-control action-segmented';
+      const radios = [];
       for (const [value, text] of resolved.options) {
         const option = document.createElement('label');
         option.className = 'segment';
@@ -1641,12 +1642,17 @@ function collectActionPayload(action) {
         const caption2 = document.createElement('span');
         caption2.textContent = text;
         option.append(radio, caption2);
-        // 选中态跟随 radio（CSS 里用 :has 或这里同步 class）
-        const sync = () => option.classList.toggle('active', radio.checked);
-        radio.addEventListener('change', sync);
-        sync();
+        radios.push({ option, radio });
         control.appendChild(option);
       }
+      // 选中态必须按整组同步，而不是各自在 change 里更新自己：
+      // 浏览器只在**被点中的那个** radio 上触发 change，
+      // 旧写法导致取消选中的那个不会移除 active，两个按钮同时高亮。
+      const sync = () => {
+        for (const { option, radio } of radios) option.classList.toggle('active', radio.checked);
+      };
+      for (const { radio } of radios) radio.addEventListener('change', sync);
+      sync();
     } else if (resolved.type === 'select') {
       control = document.createElement('select');
       for (const [value, text] of resolved.options) {

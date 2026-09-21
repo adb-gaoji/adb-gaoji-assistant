@@ -1,0 +1,34 @@
+fix(ui): 按钮组不再同时高亮两个
+
+现象：刷机弹窗默认选中 init_boot（或 A 槽），点另一个之后两个按钮
+都显示为选中状态，分不清到底刷哪个。
+
+原因：选中样式（active 类）是在**每个按钮自己的** change 事件里更新的：
+
+    const sync = () => option.classList.toggle('active', radio.checked);
+    radio.addEventListener('change', sync);
+
+而浏览器只在**被点中的那个** radio 上触发 change —— 被取消选中的那个
+收不到通知，active 就一直留着。radio 本身的互斥是正常的（checked 确实
+被清掉了），所以只有视觉出错，但足以让人不敢点确定。
+
+修复：改为每次切换都**按整组**同步：
+
+    const sync = () => {
+      for (const { option, radio } of radios) option.classList.toggle('active', radio.checked);
+    };
+
+任何时刻只有一个高亮，且一定与真正选中的一致。影响两处：
+分区（boot / init_boot）与槽位（A 槽 / B 槽）。
+
+验证
+
+- 离屏渲染复现：修复前点击后 active 数量为 2，修复后为 1；
+  并在真实渲染路径上确认分区组与槽位组切换后原按钮都取消高亮。
+- 做了对照实验：把实现改回旧写法，复现脚本确实报告 2 个高亮
+  （说明用例抓得住这个问题）。
+- 新增 tests/v1.2.5-segmented.test.js（4 项）固定不变量：
+  同一时刻高亮数必须为 1 且与选中项一致、来回切换不残留；
+  其中一项专门复刻旧写法，确认它会产生 2 个高亮。
+- 测试 117 → 121 项；CI 15 项全绿。
+- 已构建并安装 V1.2.5。
