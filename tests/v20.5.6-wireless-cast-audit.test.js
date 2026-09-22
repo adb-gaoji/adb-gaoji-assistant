@@ -24,7 +24,11 @@ test('V20.5.6 wireless endpoint validation rejects malformed and out-of-range ad
 test('wireless mirror requires the selected device and passes a concrete scrcpy serial', () => {
   assert.match(handlerSource, /handlers\['wireless-mirror'\][\s\S]*?requireSelectedAdb\(payload\)/);
   assert.match(handlerSource, /handlers\['wireless-mirror'\][\s\S]*?endpoint\.serial/);
-  assert.match(handlerSource, /handlers\['wireless-mirror'\][\s\S]*?scrcpy\(\[\], '无线投屏', mirrorSerial\)/);
+  // 无线投屏改用适配无线链路的参数（码率/分辨率/帧率），
+  // 不再是无参数的 scrcpy([])。契约随之收紧为"必须传 mirrorSerial
+  // 且必须带上无线适配参数"。
+  assert.match(handlerSource, /handlers\['wireless-mirror'\][\s\S]*?scrcpy\(wirelessArgs, '无线投屏', mirrorSerial\)/);
+  assert.match(handlerSource, /wirelessArgs = \[[\s\S]*?--video-bit-rate=8M/);
   assert.match(handlerSource, /const launchArgs = serial \? \['--serial', serial, \.\.\.args\] : args/);
 });
 

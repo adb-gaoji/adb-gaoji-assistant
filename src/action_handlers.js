@@ -568,22 +568,66 @@ function createActionHandlers(ctx) {
     if (guard) return guard;
     const exe = path.join(getResourceRoot(), 'scrcpy', 'scrcpy-win64-v4.0', 'scrcpy.exe');
     if (!fs.existsSync(exe)) return fail(`缺少 scrcpy：${exe}`);
+
+    // 投屏进程必须继承窗口站，否则 SDL 建不出窗口。
+    //
+    // 早先用 detached:true + stdio:'ignore' 启动，进程确实活着，
+    // 但抓不到任何输出、也**创建不出投屏窗口**（实测 MainWindowHandle=0、
+    // MainWindowTitle 为空），用户看到的就是"提示已启动但没窗口"。
+    // 改为非 detached 并捕获输出：既能拿到 scrcpy 的真实报错，
+    // 也让窗口正常显示。
     let session;
     try {
       const launchArgs = serial ? ['--serial', serial, ...args] : args;
-      const child = spawnProcess(exe, launchArgs, { cwd: path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: false });
-      session = { serial, pid: child.pid || 0, label, state: 'starting', startedAt: new Date().toISOString(), child };
+      const child = spawnProcess(exe, launchArgs, {
+        cwd: path.dirname(exe),
+        detached: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: false
+      });
+      session = { serial, pid: child.pid || 0, label, state: 'starting', startedAt: new Date().toISOString(), child, output: '' };
       mirrorSessions.set(sessionKey, session);
+
+      // 累积 scrcpy 输出：失败时用户能看到真正的原因（编码器不支持、
+      // 设备未授权、无线端口不通等），而不是一句无信息量的"启动失败"。
+      const collect = (chunk) => {
+        session.output = (session.output + chunk.toString()).slice(-4000);
+      };
+      if (child.stdout) child.stdout.on('data', collect);
+      if (child.stderr) child.stderr.on('data', collect);
+
       child.once('exit', (code, signal) => {
         session.state = 'exited';
         session.endedAt = new Date().toISOString();
         session.exitCode = Number.isInteger(code) ? code : null;
         session.signal = signal || '';
+        // 启动阶段就退出说明没起来，把 scrcpy 的原话带给用户
+        const text = session.output.trim();
+        if (text) sendLog(`[投屏] 进程结束（退出码 ${session.exitCode ?? 'null'}）：
+${text}
+`);
       });
+
       await new Promise((resolve, reject) => {
         child.once('spawn', resolve);
         child.once('error', reject);
       });
+
+      // 等一小会儿确认它没有立刻退出——scrcpy 在设备未授权、
+      // 编码器不可用等情况下会秒退。直接报"已启动"会误导用户。
+      const earlyExit = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), 2500);
+        child.once('exit', (code) => { clearTimeout(timer); resolve(code ?? -1); });
+      });
+      if (earlyExit !== null) {
+        mirrorSessions.delete(sessionKey);
+        session.state = 'failed';
+        session.endedAt = new Date().toISOString();
+        const detail = session.output.trim() || `退出码 ${earlyExit}`;
+        return fail(`${label}启动后立即退出，未能建立投屏：
+${detail}`);
+      }
+
       session.state = 'running';
       child.unref();
       return ok(`${label}已启动。`, { data: { session: mirrorSessionSnapshot(session) } });
@@ -1044,13 +1088,62 @@ function createActionHandlers(ctx) {
     }
     return ok(`设备 ${serial} 的投屏会话已停止。`, { data: { session: mirrorSessionSnapshot(session) } });
   };
+  /**
+   * 读取手机自己在 Wi-Fi 上的 IP。
+   *
+   * 用户最常卡住的一步就是"不知道手机 IP 是多少"，要跑到设置里翻半天。
+   * 这里直接从 wlan0 取地址；取不到再退回默认路由的 src。
+   */
+  async function detectDeviceIp(payload) {
+    const candidates = [
+      ['shell', 'ip', '-f', 'inet', 'addr', 'show', 'wlan0'],
+      ['shell', 'ip', 'route']
+    ];
+    for (const args of candidates) {
+      const result = await adbFor(payload, args, { timeoutMs: 15000 });
+      const text = textOf(result);
+      const ipv4 = text.match(/inet\s+(\d{1,3}(?:\.\d{1,3}){3})/);
+      if (ipv4 && !ipv4[1].startsWith('127.')) return ipv4[1];
+    }
+    return '';
+  }
+
   handlers['wireless-adb'] = async (payload) => {
     const guard = await requireSelectedAdb(payload); if (guard) return guard;
     const endpoint = parseWirelessEndpoint(payload.host, payload.port);
     if (!endpoint) return fail('请输入有效的手机 IPv4 地址和端口。');
-    const tcpip = await adbFor(payload, ['tcpip', String(endpoint.port)], { log: sendLog }); if (tcpip.code !== 0) return tcpip;
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    return adb(['connect', endpoint.serial], { log: sendLog });
+
+    // 手机和电脑必须在同一个 Wi-Fi 网段，否则 connect 必然超时。
+    // 提前查出来直接告诉用户，比让他等 30 秒超时有用得多。
+    const deviceIp = await detectDeviceIp(payload);
+    if (deviceIp && deviceIp !== endpoint.host) {
+      sendLog(`[无线调试] 提示：手机当前 Wi-Fi 地址是 ${deviceIp}，与填写的 ${endpoint.host} 不一致，连接可能失败。\n`);
+    }
+
+    const tcpip = await adbFor(payload, ['tcpip', String(endpoint.port)], { log: sendLog });
+    if (tcpip.code !== 0) return tcpip;
+
+    // tcpip 之后设备会重启 adbd，需要等它重新上线再连。
+    // 固定 1.2 秒太短，容易 connect 到一个还没起来的端口。
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const connected = await adb(['connect', endpoint.serial], { timeoutMs: 30000, log: sendLog });
+    if (connected.code !== 0) return connected;
+
+    const text = textOf(connected);
+    // adb connect 有个坑：连不上时退出码仍是 0，只在输出里写 failed。
+    // 必须查输出，否则会把失败报成成功。
+    if (/failed|cannot|refused|unable/i.test(text)) {
+      return fail(`无线调试连接失败：${text}\n\n请确认：\n  · 手机与电脑在同一个 Wi-Fi 下\n  · 手机端"无线调试"开关已打开\n  · 首次连接需要在手机上允许该电脑调试`);
+    }
+
+    // 真正验证设备已在线，而不是只看 connect 的那行回显
+    const devices = await adb(['devices']);
+    const online = lines(devices.stdout).some((line) => line.startsWith(endpoint.serial) && /\sdevice\b/.test(line));
+    if (!online) {
+      return fail(`已发送连接请求，但设备 ${endpoint.serial} 未出现在设备列表中。\n请确认手机已开启"无线调试"并允许本机调试授权。`);
+    }
+    return ok(`无线调试已连接：${endpoint.serial}${deviceIp ? `\n手机 Wi-Fi 地址：${deviceIp}` : ''}`);
   };
   handlers['wireless-pair'] = async (payload) => {
     const request = parseWirelessPairingRequest(payload);
@@ -1073,9 +1166,18 @@ function createActionHandlers(ctx) {
       if (connected.code !== 0) return connected;
       mirrorSerial = endpoint.serial;
     } else if (!/^\d{1,3}(\.\d{1,3}){3}:\d{1,5}$/.test(selectedSerial)) {
-      return fail('无线投屏需要手机 IP 和端口，或已连接的无线 ADB 设备。');
+      return fail('无线投屏需要手机 IP 和端口，或已连接的无线 ADB 设备。\n可在上方点"无线 ADB / 投屏"，程序会自动读取手机 IP。');
     }
-    return scrcpy([], '无线投屏', mirrorSerial);
+
+    // 无线链路带宽和丢包都比 USB 差得多，默认画质容易花屏、卡顿。
+    // 这里给一组适配无线的保守参数，并允许用户显式覆盖。
+    const wirelessArgs = [
+      '--video-bit-rate=8M',   // 无线默认降到 8M，12M 以上在 2.4G 频段常卡
+      '--max-size=1280',       // 限制分辨率，减少单帧体积
+      '--max-fps=30',          // 帧率封顶，换流畅度
+      '--print-fps'            // 输出实时帧率，便于判断链路质量
+    ];
+    return scrcpy(wirelessArgs, '无线投屏', mirrorSerial);
   };
   handlers['start-freecontrol'] = async () => openChecked(path.join(getResourceRoot(), 'bundled-tools', 'FreeControl.exe'), 'FreeControl');
   handlers['install-bundled-adb-driver'] = async () => openChecked(path.join(getResourceRoot(), 'bundled-tools', '安装ADB驱动.exe'), '内置 ADB 驱动');
