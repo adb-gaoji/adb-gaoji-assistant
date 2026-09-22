@@ -22,7 +22,7 @@ const ACTION_IDS = [
   'gms-fix-app-license', 'gms-fix-crash', 'gms-import-local', 'gms-install-builtin',
   'gms-open-downloads', 'gms-open-google-switch', 'gms-persistent-fix', 'gms-uninstall',
   'install-aiwanji-toolbox', 'install-apk-batch', 'install-apk-single', 'install-bundled-adb-driver',
-  'install-clone-tools', 'install-framework', 'install-lenovo-9008-driver', 'install-lenovo-deep-test',
+  'install-batch-paths', 'install-clone-tools', 'install-framework', 'install-lenovo-9008-driver', 'install-lenovo-deep-test',
   'install-users-manager', 'launch-package', 'lenovo-unlock-go', 'list-magisk-modules', 'list-packages', 'mirror-console', 'mirror-session-status',
   'moto-bl-unlock', 'open-key-backup-dir', 'open-lan-share', 'open-qpst-tools', 'open-tools-output', 'list-storage-files', 'export-storage-files',
   'preview-flash', 'pull-path', 'reboot-fastbootd', 'refresh-profile', 'rescue-diagnose',
@@ -466,13 +466,36 @@ function createActionHandlers(ctx) {
 
     const results = [];
     let failures = 0;
-    for (const file of files) {
-      sendLog(`[${title}] ${path.basename(file)}\n`);
+    const total = files.length;
+    // 多个包时带进度和汇总，让用户知道"共几个、还剩几个、成了几个"；
+    // 只装一个包时这些信息反而啰嗦，保持原来的简洁输出。
+    const batched = total > 1;
+    for (let index = 0; index < total; index += 1) {
+      const file = files[index];
+      const name = path.basename(file);
+      sendLog(batched ? `[${title} ${index + 1}/${total}] ${name}\n` : `[${title}] ${name}\n`);
       const result = await installAndroidFile(file, { cloneSnapshot });
-      if (result.code !== 0) failures += 1;
-      results.push(`${path.basename(file)}：${result.code === 0 ? '成功' : '失败'}\n${textOf(result)}`);
+      const succeeded = result.code === 0;
+      if (!succeeded) failures += 1;
+      // 文案固定成「安装成功 / 安装失败」：单个安装时这条就是最终结论，
+      // 多包时它同时也是每个包的结论，不必再单独补一句。
+      const verdict = succeeded ? '安装成功' : '安装失败';
+      if (batched) sendLog(`  ${name}：${verdict}\n`);
+      results.push(`${name}：${verdict}\n${textOf(result)}`);
     }
-    return { code: failures ? 1 : 0, stdout: results.join('\n\n'), stderr: failures ? `${failures} 个安装包失败。` : '' };
+
+    let summary = '';
+    if (batched) {
+      const successes = total - failures;
+      summary = `${title}完成：共 ${total} 个，成功 ${successes} 个` +
+        (failures ? `，失败 ${failures} 个。` : '，全部成功。');
+      sendLog(`\n${summary}\n`);
+    }
+    return {
+      code: failures ? 1 : 0,
+      stdout: summary ? `${results.join('\n\n')}\n\n${summary}` : results.join('\n\n'),
+      stderr: failures ? `${failures} 个安装包失败。` : ''
+    };
   }
 
   async function exportPackage(payload) {
@@ -921,6 +944,23 @@ ${detail}`);
   handlers['install-apk-batch'] = async () => {
     const folder = await chooseFolder('选择包含 APK/APKS 的文件夹');
     return installFiles(folder ? walkFiles(folder, ['.apk', '.apks', '.apkm', '.xapk']) : [], '批量安装');
+  };
+  /**
+   * 直接按路径批量安装（不弹选择框）。
+   *
+   * 给自动化调用和测试用：把"选文件夹"这一步和"安装"这一步拆开，
+   * 安装逻辑就不会因为无法模拟系统弹窗而只能靠源码断言来验证。
+   * 传文件夹则递归收集，传文件列表则原样安装。
+   */
+  handlers['install-batch-paths'] = async (payload = {}) => {
+    const input = payload.paths || (payload.path ? [payload.path] : []);
+    const picked = [];
+    for (const item of input) {
+      if (!fs.existsSync(item)) return fail(`路径不存在：${item}`);
+      if (fs.statSync(item).isDirectory()) picked.push(...walkFiles(item, ['.apk', '.apks', '.apkm', '.xapk']));
+      else picked.push(item);
+    }
+    return installFiles(picked, payload.label || '批量安装');
   };
   handlers['install-framework'] = async () => installFiles(await chooseFiles({ title: '选择框架安装包', filters: [{ name: '框架 APK/APKS', extensions: ['apk', 'apks'] }], multiple: true }), '框架安装');
   handlers['export-apk'] = exportPackage;
