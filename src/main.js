@@ -753,8 +753,36 @@ async function dispatchAction(action, payload = {}) {
       if (failed.length) {
         for (const item of failed) flashLog(`      · 第 ${item.index} 步 ${item.label}：${item.reason}\n`);
       }
+
+      // 刷机成功后自动重启进入系统。
+      //
+      // 多数固件包的 XML 结尾并没有 reboot / continue 操作，刷完设备就
+      // 一直停在 Fastboot 不动，用户会以为"刷完不开机"。这里在全部命令
+      // 成功且设备仍在 Fastboot 时主动发一次 reboot。
+      //
+      // 只在真正成功时才重启：失败或中途停止的机器不应被自动拉起，
+      // 留在 Fastboot 反而便于排查和重刷。设备已离开 Fastboot
+      // （XML 自带 reboot/continue 生效）时也不再重复发送。
+      let autoRebooted = false;
+      if (!failed.length && !stoppedAt && !leftFastboot) {
+        flashLog('\n[固件刷机] 正在重启进入系统…\n');
+        sendFlashProgress({ phase: 'rebooting' });
+        const rebootResult = await fastboot(['-s', targetSerial, 'reboot'], { log: flashLog, timeoutMs: 60000 });
+        const rebootOutcome = flashRunner.analyzeResult(['reboot'], rebootResult);
+        if (rebootOutcome.ok) {
+          autoRebooted = true;
+          flashLog('      已发送重启命令，手机将自动开机，请耐心等待。\n');
+          flashLog('      首次开机可能需要几分钟，请勿拔线或断电。\n');
+        } else {
+          // 重启失败不影响刷机结论：镜像已经写完，用户可以手动开机。
+          flashLog(`      自动重启失败：${rebootOutcome.reason}\n`);
+          flashLog('      请长按电源键手动开机，或重新进入 Fastboot 后执行重启。\n');
+        }
+      } else if (!failed.length && !stoppedAt && leftFastboot) {
+        flashLog('[固件刷机] 固件脚本已包含重启命令，设备正在开机。\n');
+      }
       if (!failed.length && !stoppedAt) {
-        flashLog('[固件刷机] 建议重启到系统后核对版本号与基带。\n');
+        flashLog('[固件刷机] 开机后请核对版本号与基带。\n');
       }
 
       const flashSummary = {
@@ -764,7 +792,8 @@ async function dispatchAction(action, payload = {}) {
         skippedErase: parsed.skipped.length,
         stoppedAt,
         durationMs,
-        failures: failed
+        failures: failed,
+        autoRebooted
       };
 
       // 收尾前把缓冲里的输出冲出去，否则界面上最后几行会缺失
@@ -781,7 +810,7 @@ async function dispatchAction(action, payload = {}) {
       }
       return {
         code: 0,
-        stdout: `固件刷机完成：${summary}`,
+        stdout: `固件刷机完成：${summary}${autoRebooted ? '，已自动重启开机' : ''}`,
         stderr: '',
         flashSummary
       };

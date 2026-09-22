@@ -471,7 +471,9 @@ function resetFlashView(total, serial) {
 
   const panel = $('flashProgress');
   if (panel) panel.hidden = false;
-  setText('flashProgressLabel', `准备刷写（设备 ${serial || '-'}）`, '准备刷写');
+  // 刷机期间最要紧的提醒：这时候动数据线会直接导致刷写中断、
+  // 分区写一半，是变砖的主要来源。文案要显眼且始终可见。
+  setText('flashProgressLabel', `正在自动刷机，请不要插拔数据线（设备 ${serial || '-'}）`, '正在自动刷机，请不要插拔数据线');
   setText('flashProgressCount', `0/${total}`, `0/${total}`);
   setText('flashProgressStats', '');
   updateFlashBar(0, total);
@@ -530,7 +532,11 @@ function handleFlashProgress(event) {
     }
 
     case 'waiting':
-      setText('flashProgressLabel', '等待设备重新进入 Fastboot…', '等待设备');
+      setText('flashProgressLabel', '等待设备重新进入 Fastboot…（请不要插拔数据线）', '等待设备');
+      break;
+
+    case 'rebooting':
+      setText('flashProgressLabel', '刷机完成，正在自动重启开机，请耐心等待…', '正在自动重启开机');
       break;
 
     case 'step-failed':
@@ -558,7 +564,9 @@ function handleFlashProgress(event) {
       setText('flashProgressStats', parts.join(' · '), '');
       setText(
         'flashProgressLabel',
-        event.ok ? '刷机完成' : (summary.stoppedAt ? `已在第 ${summary.stoppedAt} 步中止` : '刷机未完成'),
+        event.ok
+          ? (summary.autoRebooted ? '刷机完成，已自动重启开机' : '刷机完成，请手动开机')
+          : (summary.stoppedAt ? `已在第 ${summary.stoppedAt} 步中止` : '刷机未完成'),
         '刷机结束'
       );
       // 结果行也写进输出区，便于复制留档
