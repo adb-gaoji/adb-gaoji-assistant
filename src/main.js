@@ -6,7 +6,8 @@ const { spawn } = require('child_process');
 const { createActionHandlers, shellArg } = require('./action_handlers');
 const { createDeviceRebooter } = require('./device_reboot');
 const { DANGEROUS_ACTIONS: DANGEROUS_ACTION_LIST } = require('./actions.registry');
-const { resolveFlashTarget } = require('./slot_resolver');
+const slotResolver = require('./slot_resolver');
+const { resolveFlashTarget } = slotResolver;
 const flashRunner = require('./flash_runner');
 const { findFirmwareXml, parseFirmwareXml, firmwareReport } = require('./firmware_parser');
 const { lines, parseAdbDevices, parseFastbootDevices } = require('./adb_parser');
@@ -502,9 +503,7 @@ async function dispatchAction(action, payload = {}) {
       if (!mainWindow) return { code: 1, stdout: '', stderr: '主窗口不可用。' };
 
       const slotVar = await fastboot(['getvar', 'current-slot'], { timeoutMs: 8000 });
-      const slotText = `${slotVar.stdout}${slotVar.stderr}`;
-      const slotMatch = slotText.match(/current-slot:\s*([ab])/i);
-      const currentSlot = slotMatch ? slotMatch[1].toLowerCase() : '';
+      const currentSlot = slotResolver.parseCurrentSlot(`${slotVar.stdout}${slotVar.stderr}`);
 
       // current-slot 读不到通常意味着两种情况之一：
       //   a) 这台机器不是 A/B 分区（单槽机型，分区名不带后缀）
@@ -512,33 +511,55 @@ async function dispatchAction(action, payload = {}) {
       const isAbDevice = Boolean(currentSlot);
 
       const candidates = isAbDevice
-        ? ['boot_a', 'boot_b', 'init_boot_a', 'init_boot_b', 'vendor_boot_a', 'vendor_boot_b', 'vbmeta_a', 'vbmeta_b']
-        : ['boot', 'init_boot', 'vendor_boot', 'vbmeta', 'recovery'];
+        ? ['boot_a', 'boot_b', 'init_boot_a', 'init_boot_b', 'vendor_boot_a', 'vendor_boot_b',
+           'vbmeta_a', 'vbmeta_b', 'dtbo_a', 'dtbo_b', 'recovery_a', 'recovery_b', 'super']
+        : ['boot', 'init_boot', 'vendor_boot', 'vbmeta', 'dtbo', 'recovery', 'super'];
 
+      // 逐个探测分区是否真实存在。
+      //
+      // 判据必须是"有没有解析出 0x 大小"：不存在的分区**不会**报 FAILED，
+      // 而是回一个空值（实测 XT2241-1：
+      //   `partition-size:init_boot_a:  Finished. Total time: 0.001s`）。
+      // 早先只查 FAILED 关键字，把不存在的 init_boot 当成了存在，
+      // 于是把一个不存在的分区提供给用户去刷，必然失败。
       const available = [];
       const missing = [];
       for (const name of candidates) {
         const probe = await fastboot(['getvar', `partition-size:${name}`], { timeoutMs: 6000 });
-        const probeText = `${probe.stdout}${probe.stderr}`;
-        // fastboot 对不存在的分区会回 FAILED / "partition-size:xxx: not found"
-        const notFound = /FAILED|not found|unknown partition|Variable not found|error/i.test(probeText);
-        if (notFound) missing.push(name); else available.push(name);
+        const parsed = slotResolver.parsePartitionSize(`${probe.stdout}${probe.stderr}`);
+        if (parsed.exists) available.push(name); else missing.push(name);
       }
+
+      // 根据**实际存在的分区**决定该刷哪个分区，而不是按 Android 版本猜
+      const ramdisk = slotResolver.pickRamdiskPartition(available);
 
       const lines = [
         `设备分区布局：${isAbDevice ? 'A/B 双槽' : '单槽（或未进入 Fastboot）'}`,
         `当前活动槽位：${currentSlot ? currentSlot.toUpperCase() : '未能读取'}`,
         '',
         `可写分区（${available.length}）：${available.join('、') || '无'}`,
-        `不存在的分区（${missing.length}）：${missing.join('、') || '无'}`
+        `不存在的分区（${missing.length}）：${missing.join('、') || '无'}`,
+        '',
+        ramdisk.partition
+          ? `建议刷入分区：${ramdisk.partition}（${ramdisk.source}）`
+          : `未能判断该刷哪个分区：${ramdisk.source}`
       ];
 
-      // 给前端一份结构化数据，便于直接把不存在的槽位灰掉
+      // 给前端一份结构化数据：既能灰掉不存在的槽位，
+      // 也能让"刷入 Boot"按**设备实际存在的分区**定默认值，
+      // 而不是按 Android 版本猜。
       return {
         code: 0,
         stdout: lines.join('\n'),
         stderr: '',
-        slotInfo: { isAbDevice, currentSlot, available, missing }
+        slotInfo: {
+          isAbDevice,
+          currentSlot,
+          available,
+          missing,
+          ramdiskPartition: ramdisk.partition,
+          ramdiskSource: ramdisk.source
+        }
       };
     }
     case 'firmware-open-url': {

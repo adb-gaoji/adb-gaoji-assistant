@@ -243,11 +243,22 @@ let latestDeviceSlot = '';
 /**
  * 设备 Android 版本（如 '14'，读不到时为空串）。
  *
- * 用来决定刷 boot 时默认选哪个分区：
- * Android 13 起 ramdisk 从 boot 移到了 init_boot，
- * 大多数人不需要知道这件事，程序替他选好即可。
+ * 仅用于展示。**不要用它来猜该刷哪个分区**——实测摩托罗拉 XT2241-1
+ * 系统是 Android 14，却没有 init_boot 分区（ramdisk 在 boot 里）。
+ * 分区选择必须依据 fastboot 实际探测到的分区列表，见 latestDevicePartitions。
  */
 let latestDeviceAndroid = '';
+
+/**
+ * 设备上真实存在的分区名（来自 flash-slot-info 的 fastboot 探测）。
+ *
+ * 刷 boot 的默认分区由它决定，而不是按 Android 版本推断：
+ *   有 init_boot -> 默认 init_boot（GKI 标准）
+ *   没有 init_boot 但有 boot -> 默认 boot
+ *   只有 vendor_boot -> 默认 vendor_boot
+ * 未探测到（如不在 Fastboot）时为空数组，此时不猜。
+ */
+let latestDevicePartitions = [];
 let logBuffer = '';
 let lastErrorMessage = '';
 const taskState = { current: null, history: [] };
@@ -419,8 +430,35 @@ const flashView = {
   total: 0,
   succeeded: 0,
   failed: 0,
-  startedAt: 0
+  startedAt: 0,
+  /**
+   * 是否自动跟随最新输出。
+   *
+   * 默认跟随——刷机时用户要看的就是最新进度，不该还要手动往下拉。
+   * 但用户主动往上滚去回看历史时要暂停跟随，否则每次新输出都把他
+   * 拽回底部，历史根本看不了。滚回底部后自动恢复。
+   */
+  autoFollow: true
 };
+
+/** 输出区是否已经贴在底部。留余量，避免像素误差导致误判。 */
+function isConsoleAtBottom(el, slack = 32) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+}
+
+/**
+ * 绑定输出区的滚动行为。
+ *
+ * 只做一次：记录用户是否离开了底部，用来决定后续是否继续自动跟随。
+ */
+function bindFlashConsoleScroll() {
+  const preview = $('firmwarePreview');
+  if (!preview || preview.dataset.scrollBound === '1') return;
+  preview.dataset.scrollBound = '1';
+  preview.addEventListener('scroll', () => {
+    flashView.autoFollow = isConsoleAtBottom(preview);
+  });
+}
 
 function resetFlashView(total, serial) {
   flashView.active = true;
@@ -428,6 +466,8 @@ function resetFlashView(total, serial) {
   flashView.succeeded = 0;
   flashView.failed = 0;
   flashView.startedAt = Date.now();
+  // 新一轮刷机重新开始跟随
+  flashView.autoFollow = true;
 
   const panel = $('flashProgress');
   if (panel) panel.hidden = false;
@@ -437,7 +477,10 @@ function resetFlashView(total, serial) {
   updateFlashBar(0, total);
   // 清掉上一次的预览内容，让用户看到的是本次刷机的实时输出
   const preview = $('firmwarePreview');
-  if (preview) preview.textContent = '';
+  if (preview) {
+    preview.textContent = '';
+    bindFlashConsoleScroll();
+  }
 }
 
 function updateFlashBar(done, total) {
@@ -448,12 +491,22 @@ function updateFlashBar(done, total) {
   if (fill) fill.style.width = `${percent}%`;
 }
 
+/**
+ * 把刷机输出追加到页面里的输出区，并自动跟随到最新一行。
+ *
+ * 两点关键：
+ *   1. 用 insertAdjacentText 而不是 `textContent +=`。后者每次都把已有
+ *      内容整体重新解析一遍，刷机输出累积到几百行时会明显变卡。
+ *   2. 追加后跟到底部。配合 CSS 里给 .flash-console 设的 max-height，
+ *      内容是**在盒子内部滚动**的，所以设置 scrollTop 才有效——
+ *      此前只有 min-height，内容一多盒子就被撑高、溢出的是整个页面，
+ *      scrollTop 不起作用，用户只能自己往下拉页面。
+ */
 function appendFlashOutput(text) {
   const preview = $('firmwarePreview');
-  if (!preview) return;
-  preview.textContent += text;
-  // 输出很长时自动跟到底部，用户不需要手动滚
-  preview.scrollTop = preview.scrollHeight;
+  if (!preview || !text) return;
+  preview.insertAdjacentText('beforeend', text);
+  if (flashView.autoFollow) preview.scrollTop = preview.scrollHeight;
 }
 
 function handleFlashProgress(event) {
@@ -823,6 +876,46 @@ function switchPage(page) {
     unreadLogs = 0;
     $('logBadge').hidden = true;
   }
+  // 进入「引导刷入」页时刷新一次设备分区探测。
+  // 刷 boot 的默认分区依赖它——不探测就只能按版本猜，
+  // 而版本猜不准（Android 14 的机型也可能没有 init_boot 分区）。
+  if (page === 'fastboot') refreshDevicePartitions();
+}
+
+/** 分区探测是否正在进行，避免重复发起 */
+let partitionProbeInFlight = null;
+
+/**
+ * 探测设备上真实存在的分区，结果写入 latestDevicePartitions。
+ *
+ * 静默失败：探测不到（不在 Fastboot、设备未连接）时保持空数组，
+ * 由刷入弹窗提示用户先检测，而不是猜一个分区出来。
+ */
+function refreshDevicePartitions() {
+  if (partitionProbeInFlight) return partitionProbeInFlight;
+  if (latestDeviceMode !== 'Fastboot') {
+    // 不在 Fastboot 时 fastboot getvar 拿不到分区表，清空避免用过期的结果
+    latestDevicePartitions = [];
+    partitionProbeInFlight = null;
+    return Promise.resolve();
+  }
+  partitionProbeInFlight = window.gaoji
+    .run('flash-slot-info', {})
+    .then((result) => {
+      const info = result && result.slotInfo;
+      latestDevicePartitions = Array.isArray(info && info.available) ? info.available : [];
+      if (info && info.ramdiskPartition) {
+        appendLog(`[分区探测] 设备建议刷入分区：${info.ramdiskPartition}（${info.ramdiskSource}）\n`);
+      }
+      return latestDevicePartitions;
+    })
+    .catch(() => {
+      latestDevicePartitions = [];
+    })
+    .then(() => {
+      partitionProbeInFlight = null;
+    });
+  return partitionProbeInFlight;
 }
 
 function filteredApps() {
@@ -1599,19 +1692,46 @@ function collectActionPayload(action) {
       };
     }
 
-    // 分区（常用路径）：按 Android 版本自动选中 boot 或 init_boot。
-    // Android 13 起 ramdisk 从 boot 移到 init_boot，这个判断由程序做，
-    // 用户只需确认或改成另一个。
+    // 分区（常用路径）：按**设备实际存在的分区**决定默认值与可选项。
+    //
+    // 不能按 Android 版本推断：实测摩托罗拉 XT2241-1 是 Android 14，
+    // 却没有 init_boot 分区（fastboot 查 partition-size:init_boot_a 返回空），
+    // ramdisk 在 boot 里。若按版本默认选 init_boot，会去写一个不存在的分区，
+    // 结果是 `Invalid partition name` 刷写失败。
     if (field.dynamicDefault === 'partition') {
-      const androidMajor = Number(String(latestDeviceAndroid || '').split('.')[0]) || 0;
-      const prefer = androidMajor >= 13 ? 'init_boot' : 'boot';
-      resolved = {
-        ...field,
-        value: prefer,
-        hint: androidMajor
-          ? `你的手机是 Android ${latestDeviceAndroid}，已默认选中 ${prefer}（不确定就用默认值）`
-          : '不确定选哪个就用默认值'
-      };
+      const resolver = window.SLOT_RESOLVER;
+      const known = Array.isArray(latestDevicePartitions) ? latestDevicePartitions : [];
+
+      if (known.length && resolver) {
+        // 只列出设备上确实存在的候选分区，不存在的不给用户选
+        const candidates = resolver.RAMDISK_PARTITION_CANDIDATES.filter(
+          (name) => resolver.deviceHasPartition(known, name)
+        );
+        const picked = resolver.pickRamdiskPartition(known);
+        if (candidates.length) {
+          resolved = {
+            ...field,
+            options: candidates.map((name) => [name, name]),
+            value: picked.partition || candidates[0],
+            hint: `已检测设备分区，默认选 ${picked.partition || candidates[0]}（这些是设备上确实存在的分区）`
+          };
+        } else {
+          // 探测到了分区列表，但三者都没有：设备布局特殊，交给用户自选
+          resolved = {
+            ...field,
+            value: field.value || 'boot',
+            hint: '设备上未找到 init_boot / boot / vendor_boot，请用「刷入其他分区」手动指定'
+          };
+        }
+      } else {
+        // 没有探测结果（多半是没进 Fastboot）：不猜，提示用户先探测
+        resolved = {
+          ...field,
+          value: field.value || 'boot',
+          hint: '尚未检测设备分区。建议先在「引导刷入」页点“检测分区与槽位”，或直接进 Fastboot',
+          warn: true
+        };
+      }
     }
 
     // 条件显示：某些字段只在另一个字段取特定值时才出现

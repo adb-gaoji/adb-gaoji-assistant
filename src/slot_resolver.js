@@ -35,6 +35,97 @@
    */
   const SLOT_REQUIRED_PARTITIONS = ['boot', 'init_boot', 'vendor_boot', 'vbmeta', 'dtbo'];
 
+  /**
+   * 刷 Magisk / 修开机时，ramdisk 可能位于哪个分区，按优先级排列。
+   *
+   * 这不是按 Android 版本猜出来的，而是**必须探测设备实际有哪些分区**：
+   *   - Android 13 引入 GKI 后，多数机型把 ramdisk 放进 `init_boot`；
+   *   - 但仍有大量 Android 13/14 机型沿用传统布局，ramdisk 在 `boot` 里，
+   *     设备上**根本没有 init_boot 分区**（实测摩托罗拉 XT2241-1 就是这样：
+   *     系统是 Android 14，却在 fastboot 里查不到 init_boot，
+   *     按版本号猜会选中一个不存在的分区，刷写必然失败）。
+   *   - 少数机型用 `vendor_boot` 承载 ramdisk。
+   *
+   * 顺序即优先级：init_boot 优先（GKI 标准），其次 boot，
+   * 最后 vendor_boot。
+   */
+  const RAMDISK_PARTITION_CANDIDATES = ['init_boot', 'boot', 'vendor_boot'];
+
+  /**
+   * 从设备实际存在的分区列表里，挑出该刷哪个分区。
+   *
+   * @param {string[]} available 设备上真实存在的分区名（可带或不带槽位后缀）
+   * @returns {{partition:string, source:string}}
+   *   partition: 'init_boot' | 'boot' | 'vendor_boot'；都探测不到时为空串
+   *   source   : 给用户看的依据说明
+   */
+  function pickRamdiskPartition(available) {
+    const list = Array.isArray(available) ? available : [];
+    if (!list.length) {
+      return { partition: '', source: '未能读取设备分区列表。' };
+    }
+    // 归一化：把带槽位后缀的名字还原成基名，便于比较
+    const bases = new Set(list.map((name) => String(name).replace(/_[ab]$/i, '').toLowerCase()));
+    for (const candidate of RAMDISK_PARTITION_CANDIDATES) {
+      if (bases.has(candidate)) {
+        return {
+          partition: candidate,
+          source: `设备上存在 ${candidate} 分区。`
+        };
+      }
+    }
+    return { partition: '', source: '设备上未找到 init_boot / boot / vendor_boot 中的任何一个。' };
+  }
+
+  /**
+   * 解析 `fastboot getvar partition-size:<name>` 的返回，判断分区是否存在。
+   *
+   * 关键：不存在的分区**不会**回 FAILED/error，而是回一个**空值**：
+   *
+   *   存在  : partition-size:boot_a: 0x0000000006000000  Finished. Total time: 0.021s
+   *   不存在: partition-size:init_boot_a:                  Finished. Total time: 0.001s
+   *   不存在: partition-size:init_boot:                    Finished. Total time: 0.001s
+   *
+   * 所以判据必须是「有没有解析出 0x 开头的十六进制值」，
+   * 只看 FAILED 关键字会把不存在的分区当成存在——实测摩托罗拉 XT2241-1
+   * 就是这样被误判的，进而把一个不存在的分区提供给用户去刷。
+   */
+  function parsePartitionSize(output) {
+    const text = String(output || '');
+    if (/FAILED|not found|unknown partition|Variable not found/i.test(text)) {
+      return { exists: false, bytes: 0 };
+    }
+    const match = text.match(/partition-size:[^:]*:\s*0x([0-9a-fA-F]+)/);
+    if (!match) return { exists: false, bytes: 0 };
+    const bytes = Number.parseInt(match[1], 16);
+    if (!Number.isFinite(bytes) || bytes <= 0) return { exists: false, bytes: 0 };
+    return { exists: true, bytes };
+  }
+
+  /**
+   * 解析 `fastboot getvar current-slot` 的返回。
+   *
+   * 实际返回形如 `current-slot: a`，部分 bootloader 会带下划线（`_a`），
+   * 因此正则允许可选的下划线前缀。
+   */
+  function parseCurrentSlot(output) {
+    const text = String(output || '');
+    const match = text.match(/current-slot:\s*_?([ab])\b/i);
+    return match ? match[1].toLowerCase() : '';
+  }
+
+  /**
+   * 判断某个分区在设备上是否存在（按基名匹配，忽略槽位后缀）。
+   */
+  function deviceHasPartition(available, partition) {
+    const base = String(partition || '').replace(/_[ab]$/i, '').toLowerCase();
+    if (!base) return false;
+    return (Array.isArray(available) ? available : []).some(
+      (name) => String(name).replace(/_[ab]$/i, '').toLowerCase() === base
+    );
+  }
+
+
   /** 允许出现在分区名里的字符。设备上的分区名不会超出这个范围。 */
   const PARTITION_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -192,10 +283,16 @@
 
   return {
     VALID_SLOTS,
+    SLOT_REQUIRED_PARTITIONS,
+    RAMDISK_PARTITION_CANDIDATES,
     hasSlotSuffix,
     normalizeSlot,
     resolvePartitionName,
     validatePartitionName,
+    pickRamdiskPartition,
+    deviceHasPartition,
+    parsePartitionSize,
+    parseCurrentSlot,
     resolveFlashTarget
   };
 });
