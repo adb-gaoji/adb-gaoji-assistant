@@ -87,6 +87,7 @@ jobs:
           - audit:mirror-session
           - audit:themes
           - audit:contrast
+          - audit:flash-scroll
           - audit:links
           - audit:patterns
 
