@@ -7,6 +7,9 @@ const { createActionHandlers, shellArg } = require('./action_handlers');
 const { createDeviceRebooter } = require('./device_reboot');
 const { DANGEROUS_ACTIONS: DANGEROUS_ACTION_LIST } = require('./actions.registry');
 const slotResolver = require('./slot_resolver');
+const teaMatcher = require('./tea_matcher');
+const teaBuilder = require('./tea_builder');
+const bootImage = require('./boot_image');
 const { resolveFlashTarget } = slotResolver;
 const flashRunner = require('./flash_runner');
 const { findFirmwareXml, parseFirmwareXml, firmwareReport } = require('./firmware_parser');
@@ -896,6 +899,17 @@ async function dispatchAction(action, payload = {}) {
         stderr: result.stderr || ''
       };
     }
+    /**
+     * Tea 制作。
+     *
+     * 两种入口，都**不需要用户做技术选择**：
+     *   · 默认（用户提供原厂 boot）：拿用户自己的 boot 当外壳，
+     *     自动从内置模板里取 Tea 核心注入，产出可刷镜像；
+     *   · 未提供 boot：退化为直接输出内置模板镜像（旧行为）。
+     *
+     * 前者才是"用我的原厂 boot 做"的正确做法：保留用户的
+     * kernel / header / 签名块，只注入 Tea 运行时要用的文件。
+     */
     case 'tea-boot-builder': {
       const library = path.join(getResourceRoot(), 'tea-templates');
       const manifestPath = path.join(library, 'manifest.json');
@@ -903,28 +917,79 @@ async function dispatchAction(action, payload = {}) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
       const templates = manifest.templates.filter((item) => Array.isArray(item.files) && item.files.length);
       if (!templates.length) return { code: 1, stdout: '', stderr: 'Tea 模板库为空。' };
-      const selectedTemplate = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        title: '选择 Tea 模板',
-        message: '请选择与手机机型和 Android 版本匹配的 Tea 模板',
-        detail: '模板不匹配可能导致无法启动。reference_only 模板只用于结构参考，不会允许输出为可刷镜像。',
-        buttons: [...templates.map((item) => `Android ${item.android} · ${item.model}`), '取消'],
-        cancelId: templates.length
-      });
-      if (selectedTemplate.response >= templates.length) return { code: 1, stdout: '', stderr: '已取消' };
-      const template = templates[selectedTemplate.response];
+
+      // 以前这里弹两个框让用户选模板和槽位。用户不可能知道该选哪个——
+      // 设备代号、机型、Android 版本、活动槽位都是程序能读到的，
+      // 让用户猜等于把选错的风险转嫁给他。现在全部自动判定。
+      const status = await getStatus();
+      const matched = teaMatcher.matchTeaTemplate(manifest, status);
+      if (!matched.ok) return { code: 2, stdout: '', stderr: `未能自动匹配 Tea 模板，已阻止输出。\n\n${matched.reason}` };
+      const template = matched.template;
       if (template.reference_only) return { code: 2, stdout: '', stderr: `${template.model} 模板标记为 reference_only，只能用于结构参考，已阻止生成可刷镜像。\n${template.notes}` };
-      const slotChoice = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        title: '选择槽位',
-        message: `目标模板：${template.model} / Android ${template.android}`,
-        detail: `分区：${template.partition || 'boot'}。请选择要生成的槽位镜像。`,
-        buttons: ['槽位 A', '槽位 B', '取消'],
-        cancelId: 2
-      });
-      if (slotChoice.response === 2) return { code: 1, stdout: '', stderr: '已取消' };
-      const relative = template.files[Math.min(slotChoice.response, template.files.length - 1)];
+
+      const slotPick = teaMatcher.pickTeaSlotFile(template, status);
+      if (!slotPick) return { code: 1, stdout: '', stderr: '匹配到的模板没有可用的镜像文件。' };
+      sendLog(`[Tea 制作] ${matched.reason}，槽位 ${slotPick.slot}（自动判定，无需选择）\n`);
+      const relative = slotPick.relative;
       const source = path.join(library, relative);
+
+      // ── 自动制作：用用户提供的原厂 boot 作为外壳 ──────────────────────
+      // 没带 stockBoot 时，直接弹选择框让用户挑一张原厂 boot——
+      // 这样界面上只需要点一次按钮，不需要用户先理解"模板/供体"是什么。
+      let stockBoot = String(payload.stockBoot || '').trim();
+      if (!stockBoot && payload.pickStock !== false) {
+        const picked = await dialog.showOpenDialog(mainWindow, {
+          title: '选择你的原厂 boot 镜像（boot.img / init_boot.img）',
+          filters: [{ name: 'Boot 镜像', extensions: ['img'] }],
+          properties: ['openFile']
+        });
+        if (picked.canceled || !picked.filePaths.length) return { code: 1, stdout: '', stderr: '已取消。' };
+        stockBoot = picked.filePaths[0];
+        sendLog(`[Tea 制作] 已选原厂 boot：${stockBoot}\n`);
+      }
+      if (stockBoot) {
+        const stockPath = stockBoot;
+        if (!fs.existsSync(stockPath)) return { code: 1, stdout: '', stderr: `原厂 boot 不存在：${stockPath}` };
+        if (!fs.existsSync(source)) return { code: 1, stdout: '', stderr: `Tea 供体镜像不存在：${source}` };
+
+        const donorBuf = fs.readFileSync(source);
+        const stockBuf = fs.readFileSync(stockPath);
+        let built;
+        try {
+          built = teaBuilder.build(stockBuf, donorBuf);
+        } catch (error) {
+          return { code: 2, stdout: '', stderr: `Tea 自动制作失败，未生成任何镜像。\n\n${error.message}` };
+        }
+
+        const workspace = path.join(app.getPath('desktop'), 'Tea制作');
+        const baseName = `boot_${template.code || 'tea'}_android${template.android}_Tea_自动制作.img`;
+        const staged = uniqueOutputPath(workspace, baseName);
+        fs.writeFileSync(staged, built.buffer);
+
+        const outSha = crypto.createHash('sha256').update(fs.readFileSync(staged)).digest('hex').toUpperCase();
+        // 产物必须能被自己的解析器读回来，否则说明写出去的就是坏的。
+        const recheck = bootImage.parse(fs.readFileSync(staged));
+        const report = [
+          `来源：用户提供的原厂 boot`,
+          `原厂镜像：${stockPath}`,
+          `Tea 供体：${template.id}（${template.model} / Android ${template.android}）`,
+          `输出：${staged}`,
+          `SHA256：${outSha}`,
+          `内核：保留原厂（${recheck.kernelSize} 字节，未被改动）`,
+          `签名块：保留原厂（${recheck.signatureSize} 字节）`,
+          '',
+          '制作步骤：',
+          ...built.report.map((line) => `  · ${line}`)
+        ].join('\n');
+        fs.writeFileSync(`${staged}.txt`, report, 'utf8');
+        sendLog(`[Tea 制作] 已自动完成：${staged}\n${report}\n`);
+        await shell.openPath(workspace);
+        return {
+          code: 0,
+          stdout: `Tea 镜像已用你的原厂 boot 自动制作完成。\n刷入前请核对：机型、Android 版本、分区、槽位。\n\n${report}`,
+          stderr: ''
+        };
+      }
       if (!fs.existsSync(source)) return { code: 1, stdout: '', stderr: `模板镜像不存在：${source}` };
       const sourceSha256 = crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex').toUpperCase();
       if (template.sha256 && sourceSha256 !== String(template.sha256).toUpperCase()) {
@@ -942,7 +1007,7 @@ async function dispatchAction(action, payload = {}) {
         `设备代号：${template.code}`,
         `Android：${template.android}`,
         `分区：${template.partition || 'boot'}`,
-        `槽位：${slotChoice.response === 0 ? 'A' : 'B'}`,
+        `槽位：${slotPick.slot}`,
         `输出：${staged}`,
         `SHA256：${sha256}`,
         `实机验证：${template.real_device_verified ? '是' : '未标记'}`,
