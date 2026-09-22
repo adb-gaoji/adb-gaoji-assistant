@@ -85,7 +85,18 @@ if ($SkipCi) {
   if ($LASTEXITCODE -ne 0) { throw "npm test failed with exit code $LASTEXITCODE" }
 } else {
   Step 'Running CI (checks, tests, audits, resources)...'
-  & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'ci.ps1')
+  # 与 ci.ps1 的资源校验同理：优先 PowerShell 7，未安装则退回系统自带的
+  # Windows PowerShell 5.1。此前硬编码 pwsh，只装 5.1 的机器上会直接
+  # 以「找不到 pwsh」中断发布。
+  $psHost = $null
+  $ps7 = Get-Command pwsh -ErrorAction SilentlyContinue
+  if ($ps7) { $psHost = $ps7.Source }
+  if (-not $psHost) {
+    $ps51 = Get-Command powershell -ErrorAction SilentlyContinue
+    if ($ps51) { $psHost = $ps51.Source }
+  }
+  if (-not $psHost) { throw '未找到可用的 PowerShell（pwsh / powershell 均不可用）' }
+  & $psHost -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'ci.ps1')
   if ($LASTEXITCODE -ne 0) { throw "CI failed with exit code $LASTEXITCODE" }
 }
 

@@ -198,7 +198,26 @@ if ($SkipResources) {
   Write-Host '[5/5] 资源校验'
   $verify = Join-Path $PSScriptRoot 'verify-resources.ps1'
   if (Test-Path $verify) {
-    Invoke-Check -Name 'verify-resources' -Action { & pwsh -NoProfile -File $verify } | Out-Null
+    # verify-resources.ps1 需要独立进程执行。优先用 PowerShell 7（pwsh），
+    # 未安装时退回系统自带的 Windows PowerShell 5.1 —— 此前硬编码 pwsh，
+    # 在只装了 5.1 的机器上资源校验会报「找不到 pwsh」而误判失败，
+    # 掩盖资源其实齐全的事实。两个脚本都兼容 5.1。
+    # 注意：脚本开头有 Set-StrictMode -Version Latest，
+    # 对 $null 取属性会直接抛异常，因此必须先判空再取 .Source。
+    $psHost = $null
+    $ps7 = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($ps7) { $psHost = $ps7.Source }
+    if (-not $psHost) {
+      $ps51 = Get-Command powershell -ErrorAction SilentlyContinue
+      if ($ps51) { $psHost = $ps51.Source }
+    }
+    if (-not $psHost) {
+      $script:failures += 'verify-resources'
+      Write-Host '    FAIL 未找到可用的 PowerShell（pwsh / powershell 均不可用）' -ForegroundColor Red
+    } else {
+      if (-not $Quiet) { Write-Host "    (使用 $psHost)" -ForegroundColor DarkGray }
+      Invoke-Check -Name 'verify-resources' -Action { & $psHost -NoProfile -ExecutionPolicy Bypass -File $verify } | Out-Null
+    }
   } else {
     Write-Host '    (未找到 verify-resources.ps1，跳过)' -ForegroundColor DarkYellow
   }
