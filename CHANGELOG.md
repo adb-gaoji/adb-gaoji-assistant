@@ -6,6 +6,93 @@
 
 ---
 
+## [1.2.13] - 2026-09-25
+
+Tea 制作补上 vbmeta 让位与 AVB footer 重建；供体自动选择改为唯一实测「国网不闪退」的那份；新增 6 台机型的实机验证模板。
+
+这一版修的都是「镜像做出来了、但刷不进去」的真实故障。
+
+### 修复
+
+- **★ 移植后 vbmeta 被 ramdisk 覆盖，刷机报 `Preflash validation failed`**：
+  制作只把 boot 的「header + kernel + ramdisk」拼回去就结束，从不考虑 vbmeta 放在哪。
+  Motorola 刷入前会校验镜像尾部 AVB footer 里声明的 `original_image_size` / `vbmeta_offset`，
+  Tea 核心比原厂 init 大得多，ramdisk 一变长就越过 vbmeta 的位置，把它覆盖掉、
+  声明值也与实际不符，于是被拒收。
+  **G53/penang 原镜像的余量只有 2656 字节，移植后越界 1042415 字节 —— 不做让位必然刷不进去。**
+  现在 `repackPreservingAvb()` 会在越界时把 vbmeta 整块后移到 `align(ramdisk 结束 + 4096, 4096)`，
+  并同步改写 footer 的偏移 12 与 20（8 字节大端）。解锁设备的 vbmeta 是 256 字节无签名结构，
+  没有签名绑定位置，可以自由搬运。
+- **★ 重建后的镜像比原图短，尾部 AVB footer 被丢掉**：
+  旧 `repack()` 返回的是 `header + kernel + ramdisk`，尾部的填充与 footer 全部丢失。
+  实测 G71S 那张成品就是这样坏的：尾部 64 字节全是 0，没有 `AVBf` 魔数。
+  现在重建后**保持镜像总长与原图一致**，footer 与 vbmeta 都放回正确位置。
+  没有 footer 的镜像（早期合成镜像）则允许增长，不会把 ramdisk 截断。
+- **★ 条目名带 `./` 前缀的供体被误判成「缺少全部 Tea 条目」**：
+  不同工具打出来的 ramdisk，条目名可能带 `./` 前缀（S30 安卓12 那份就是
+  `./overlay.d/sbin/tea32.xz`），也可能不带（X30 Pro 的模板就是 `overlay.d/sbin/tea32.xz`）。
+  两者语义完全相同，但按字面查表会全部落空 —— 一份 11 个 Tea 条目齐全的供体，
+  会被报成「缺少 overlay.d、…、.backup/init」而直接拒绝制作。
+  现在 `cpio.parse()` 额外保留一个去掉前缀的 `key` 供查找，重建时仍写回原始 `name`，
+  保证原厂镜像结构一个字节都不变。报错信息也会列出该镜像实际的前几个条目名。
+- **自动挑供体会挑错人**：`pickTeaDonor` 按 `tea_core_donor`(+8) / `real_device_verified`(+4) /
+  notes 含 `tea.product`(+2) 打分。原先只有 X30 Pro 那张 `10clones-verified` 三项全占（14 分），
+  而它其实是**机型专属成品**，带着 X30 Pro 自己的 `.backup/init`，
+  拿去做别的机型会卡开机；真正唯一实测「国网不闪退」的 S30 安卓12 供体却只有 0 分。
+  现在前者去掉 `tea_core_donor`（降为 4 分），后者补上标记（14 分），自动选择结果正确。
+
+### 新增
+
+- **6 台机型的实机验证成品模板入库**（`resources/tea-templates/`，模板库版本 V9.8.0）：
+  G71S/rhodep（Android 12，国网不闪退、10 开分身在位）、
+  G53/penang（Android 14，冷启动 70 秒 0 崩溃）、
+  X30 Pro/eqs（Android 13，a/b 双槽刷入验证）、
+  S30 安卓11、S Pro/XT2153-1、Y90。
+  后三张尚未上真机验证，已在模板里用 `real_device_verified: false` 标出，
+  并在 notes 里写明「请先用 `fastboot boot` 临时启动确认」。
+- 每个模板都记录了**实测**结构参数（header 版本、压缩方式、kernel/ramdisk 大小、
+  vbmeta 偏移与余量），不再依赖记忆填写。
+
+### 测试
+
+- 新增 `tests/v1.2.13-tea-vbmeta-slack.test.js`（6 个用例）：
+  余量充足时 vbmeta 原地不动、越界时必须后移且 footer 偏移同步改写、
+  重建后总长与原图一致、无 footer 的镜像按原长补 0、
+  带 `./` 前缀与不带前缀的供体等价、`normalizeName` 行为。
+- 更正 `tests/v1.2.12-tea-pick-boot-first.test.js` 的供体期望值：
+  唯一正确的通用供体是 S30 安卓12 那份，并新增一条断言防止机型专属成品再被标成通用供体。
+- 全量测试 188 项全通过。
+
+---
+## [1.2.12] - 2026-09-23
+
+Tea 制作改为「先选原厂 boot」，不再要求先连手机；修正移植时记错的 SHA1。
+
+### 修复
+- **手机没连上就做不了 Tea 镜像**：旧流程一上来先读设备、按机型匹配模板，
+  读不到就直接拦住，用户连「选原厂 boot」那一步都走不到，
+  只会看到「读不到设备机型信息，无法自动匹配模板」。
+  根因是把一件与机型无关的事绑上了「必须先插手机」的前提——
+  Tea 运行时（`tea64` / `tea32` / `teapolicy` / `tea.product`）是 ARM64 通用件，
+  制作只需要「一张原厂 boot + 一份完整供体」。
+  现在先选 boot、再自动挑供体，设备信息只写进报告供核对。
+- **`.backup/.tea` 里的 SHA1 是供体那台机器的**：移植时把供体的 Magisk 配置原样抄了过来，
+  指纹一直指向供体（`988E489C…`）而不是本次使用的原厂 boot（penang 为 `534F6E42…`）。
+  不影响开机与 root，但 Magisk 的「还原原厂 boot」会去找一台不存在的镜像。
+  现在按实际提供的原厂 boot 重算。
+
+### 改进
+- 新增 `pickTeaDonor()`：不依赖设备信息自动挑供体，
+  优先「Tea 核心供体 + 实机验证过」的模板，`reference_only` 永不作为供体输出。
+- 制作报告补充：原厂镜像、所选供体、选用依据、设备核对信息。
+- 取消选择时明确拒绝，不再悄悄复制一份别的机型的镜像充当「制作成功」。
+
+### 测试
+- 新增 `tests/v1.2.12-tea-pick-boot-first.test.js`（7 项），
+  含「不传设备信息也必须挑得出供体」这一旧版失败场景的回归。
+- 全量 182 项通过。
+
+---
 ## [1.2.11] - 2026-09-22
 
 Tea 制作改为「只用原厂 boot，全程自动」，去掉所有需要专业知识的选择。

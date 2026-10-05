@@ -156,3 +156,35 @@ test('自动制作：原厂镜像不是 boot 时明确报错', () => {
   const donor = makeDonor();
   assert.throws(() => teaBuilder.build(Buffer.alloc(1024), donor), /不是有效的 Android boot 镜像/);
 });
+
+test('自动制作：.backup/.tea 的 SHA1 必须是本次原厂 boot 的指纹', () => {
+  // Magisk 用这个字段做「还原原厂 boot」。若沿用供体的值，Magisk 会拿着
+  // donor 那台机器的指纹去新机上找镜像，还原功能必然失败。
+  // 目录里给 penang 用的现成镜像至今还带着 X30 pro 的指纹，就是这个疏漏。
+  const stock = makeBoot();
+  const donor = makeDonor();
+  const { buffer } = teaBuilder.build(stock, donor);
+  const { entries } = entriesOf(buffer);
+  const tea = entries.find((e) => e.name === '.backup/.tea');
+  const expect = crypto.createHash('sha1').update(stock).digest('hex');
+  assert.match(tea.data.toString('utf8'), new RegExp('^SHA1=' + expect + '$', 'm'),
+    'SHA1 必须指向本次的原厂 boot');
+  assert.ok(!tea.data.toString('utf8').includes('SHA1=abc'), '不能残留供体的 SHA1');
+});
+
+test('自动制作：改写 SHA1 时其余 Magisk 开关必须原样保留', () => {
+  const stock = makeBoot();
+  const donor = makeDonor();
+  const { buffer } = teaBuilder.build(stock, donor);
+  const tea = entriesOf(buffer).entries.find((e) => e.name === '.backup/.tea');
+  const text = tea.data.toString('utf8');
+  assert.match(text, /^KEEPVERITY=true$/m, 'KEEPVERITY 不能被改动');
+});
+
+test('自动制作：供体 .tea 缺少 SHA1 行时原样保留，不报错', () => {
+  const stock = makeBoot();
+  const donor = makeDonor();
+  const entry = { name: '.backup/.tea', mode: 0o100644, data: Buffer.from('KEEPVERITY=true\n') };
+  const out = teaBuilder.withStockSha1(entry, stock);
+  assert.equal(out.data.toString('utf8'), 'KEEPVERITY=true\n');
+});

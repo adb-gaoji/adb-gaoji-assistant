@@ -120,4 +120,127 @@ function detectRamdiskCompression(ramdisk) {
   return 'unknown';
 }
 
-module.exports = { parse, repack, detectRamdiskCompression, BootImageError, V4_ALIGN, MAGIC };
+
+/** AVB footer 的魔数，Android 的 vbmeta 信息就记录在这 64 字节里。 */
+const AVB_FOOTER_MAGIC = 'AVBf';
+/** AVB footer 固定贴在镜像最后 64 字节。 */
+const AVB_FOOTER_SIZE = 64;
+
+/**
+ * 读出镜像尾部的 AVB footer。
+ *
+ * footer 布局（全部大端）：
+ *   0  magic 'AVBf'
+ *   4  version_major (4)
+ *   8  version_minor (4)
+ *   12 original_image_size (8) —— 也就是 vbmeta 的起始偏移
+ *   20 vbmeta_offset (8)       —— 与上面同值
+ *   28 vbmeta_size (8)
+ *
+ * 没有 footer（或魔数不符）时返回 null：那种镜像尾部没有任何要保护的东西，
+ * 保持原样重建即可。
+ */
+function parseAvbFooter(buf) {
+  if (buf.length < AVB_FOOTER_SIZE) return null;
+  const foot = buf.subarray(buf.length - AVB_FOOTER_SIZE);
+  if (foot.toString('ascii', 0, 4) !== AVB_FOOTER_MAGIC) return null;
+  const vbmetaOffset = Number(foot.readBigUInt64BE(20));
+  const vbmetaSize = Number(foot.readBigUInt64BE(28));
+  if (!Number.isSafeInteger(vbmetaOffset) || !Number.isSafeInteger(vbmetaSize)) return null;
+  if (vbmetaOffset <= 0 || vbmetaSize <= 0) return null;
+  if (vbmetaOffset + vbmetaSize > buf.length - AVB_FOOTER_SIZE) return null;
+  return { vbmetaOffset, vbmetaSize };
+}
+
+/**
+ * 用新 ramdisk 重建镜像，并保证不压坏 vbmeta。
+ *
+ * 为什么必须有这一步：
+ *   Motorola 等厂商在刷入前会做 preflash 校验，它读的是尾部 AVB footer 声明的
+ *   `original_image_size` 与 `vbmeta_offset`。ramdisk 一旦涨大、越过 vbmeta 的位置，
+ *   vbmeta 会被覆盖（魔数不再是 AVB0）、footer 声明的值也与实际不符，
+ *   刷机就会以 `Preflash validation failed` 被拒收。
+ *
+ *   G53 原镜像的余量只有 110 字节，而 Tea 核心比原厂 init 大得多，
+ *   必然越界 —— 所以这一步不是保险，是必需。
+ *
+ * 做法：vbmeta 能原地放下就原地不动；放不下就整块后移到
+ * `align(ramdisk 结束 + 4096, 4096)`，再同步改写 footer 的偏移 12 与 20。
+ * 解锁设备的 vbmeta 是 256 字节无签名结构（auth_size=0 / aux_size=0），
+ * 没有签名绑定位置，因此可以自由搬运。
+ *
+ * 关键：重建后**保持镜像总长不变**。分区大小是固定的，短了会把 footer 丢掉
+ * （G71S 那张成品就是这样坏的：尾部 64 字节全变成 0）。
+ *
+ * @param {Buffer} original 原始镜像（用来取总长、footer 与 vbmeta）
+ * @param {object} parsed   parse(original) 的结果
+ * @param {Buffer} newRamdisk 新的 ramdisk
+ * @returns {{buffer: Buffer, report: string[], moved: boolean}}
+ */
+function repackPreservingAvb(original, parsed, newRamdisk) {
+  const { header, kernel, headerVersion, headerSize, pageSize } = parsed;
+  const align = headerVersion >= 3 ? V4_ALIGN : pageSize;
+  const report = [];
+
+  const outHeader = Buffer.from(header);
+  outHeader.writeUInt32LE(newRamdisk.length, 12);
+
+  const kernelOffset = alignTo(outHeader.length, align);
+  const ramdiskOffset = alignTo(kernelOffset + kernel.length, align);
+  const ramdiskEnd = ramdiskOffset + newRamdisk.length;
+
+  // 镜像总长：有 AVB footer 时必须与原来一致（短了就丢 footer、长了多出无意义填充）；
+  // 没有 footer 时允许增长 —— 那种镜像尾部本来就没有要保护的结构，
+  // 强行截回原长反而会把 ramdisk 截断（早期合成镜像就是这种情形）。
+  const footer = parseAvbFooter(original);
+  const totalSize = footer ? original.length : Math.max(original.length, ramdiskEnd);
+  const out = Buffer.alloc(totalSize);
+  outHeader.copy(out, 0);
+  kernel.copy(out, kernelOffset);
+  newRamdisk.copy(out, ramdiskOffset);
+
+  if (!footer) {
+    report.push(`原镜像没有 AVB footer，按 ${totalSize} 字节重建（无 vbmeta 需要搬运）`);
+    return { buffer: out, report, moved: false };
+  }
+
+  const { vbmetaOffset, vbmetaSize } = footer;
+  const slack = vbmetaOffset - ramdiskEnd;
+  let target = vbmetaOffset;
+  let moved = false;
+
+  if (slack < 0) {
+    // 越界：vbmeta 必须后移。多留一页余量，避免刚好贴着下次再涨就又要搬。
+    target = alignTo(ramdiskEnd + align, align);
+    moved = true;
+  }
+
+  if (target + vbmetaSize > totalSize - AVB_FOOTER_SIZE) {
+    throw new BootImageError(
+      `ramdisk 增大 ${newRamdisk.length - parsed.ramdiskSize} 字节后，vbmeta 已无处安放` +
+      `（需要 ${vbmetaSize} 字节，可用 ${totalSize - AVB_FOOTER_SIZE - ramdiskEnd} 字节）。`
+    );
+  }
+
+  // 原来的 vbmeta 内容整块搬到新位置。
+  const vbmeta = original.subarray(vbmetaOffset, vbmetaOffset + vbmetaSize);
+  vbmeta.copy(out, target);
+
+  // footer 整体复制，再改写两个偏移字段（都是 8 字节大端）。
+  const newFooter = Buffer.from(original.subarray(totalSize - AVB_FOOTER_SIZE));
+  newFooter.writeBigUInt64BE(BigInt(target), 12);
+  newFooter.writeBigUInt64BE(BigInt(target), 20);
+  newFooter.copy(out, totalSize - AVB_FOOTER_SIZE);
+
+  if (moved) {
+    report.push(
+      `vbmeta 让位：ramdisk 结束于 ${ramdiskEnd}，原 vbmeta 在 ${vbmetaOffset}` +
+      `（余量 ${slack}），已后移至 ${target}，footer 偏移 12/20 同步改写，新余量 ${target - ramdiskEnd}`
+    );
+  } else {
+    report.push(`vbmeta 无需让位：ramdisk 结束于 ${ramdiskEnd}，vbmeta 在 ${vbmetaOffset}，余量 ${slack}`);
+  }
+
+  return { buffer: out, report, moved };
+}
+module.exports = { parse, repack, repackPreservingAvb, parseAvbFooter, detectRamdiskCompression, BootImageError, V4_ALIGN, MAGIC, AVB_FOOTER_SIZE };
