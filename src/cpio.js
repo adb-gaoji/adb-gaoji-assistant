@@ -16,6 +16,15 @@ const TRAILER = 'TRAILER!!!';
 
 const align4 = (n) => (n + 3) & ~3;
 
+/**
+ * 规范化 cpio 条目名：剥掉开头的 './'。
+ *
+ * 只用于查找与比较，不改变写回归档时的原始名字。
+ */
+function normalizeName(name) {
+  return name.startsWith('./') ? name.slice(2) : name;
+}
+
 /** 解析 cpio，返回条目列表（含在缓冲区中的偏移与长度）。 */
 function parse(buf) {
   const entries = [];
@@ -36,6 +45,17 @@ function parse(buf) {
     if (dataStart + filesize > buf.length) break;
     entries.push({
       name,
+      // 规范化名：只用于按名字查找，**不参与重建**。
+      //
+      // 不同打包工具生成的 ramdisk 里，条目名可能带 './' 前缀
+      // （S30 安卓12 那份供体就是 './overlay.d/sbin/tea32.xz'），
+      // 也可能不带（X30 Pro 的模板就是 'overlay.d/sbin/tea32.xz'）。
+      // 两者语义完全相同，但按字面查表会全部落空——曾经因此把一份
+      // 条目齐全的供体误判成"缺少全部 Tea 条目"，直接拒绝制作。
+      //
+      // 这里额外保留一个去前缀的 key 供查找；重建时仍然写回原始 name，
+      // 保证原厂镜像结构一个字节都不变。
+      key: normalizeName(name),
       mode,
       size: filesize,
       data: buf.slice(dataStart, dataStart + filesize)
@@ -80,4 +100,4 @@ function build(entries) {
   return Buffer.concat([body, tail]);
 }
 
-module.exports = { parse, build, encodeEntry, align4, MAGIC_NEWC, TRAILER };
+module.exports = { parse, build, encodeEntry, align4, normalizeName, MAGIC_NEWC, TRAILER };

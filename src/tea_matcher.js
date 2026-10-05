@@ -103,6 +103,54 @@ function matchTeaTemplate(manifest, status = {}) {
 }
 
 /**
+ * 不依赖设备，自动挑一份最完整的 Tea 供体。
+ *
+ * 这是 Tea 制作最关键的一条认知：Tea 的运行时
+ * （tea64 / tea32 / teapolicy / tea.product）是 ARM64 通用件，
+ * **不随机型变化**。移植时保留的始终是用户自己的 kernel / header，
+ * 只把这几份通用件塞进他的 ramdisk。
+ *
+ * 所以"该用哪个模板"这个问题本身并不成立——需要的只是"一份完整供体"。
+ * 之前的实现在这一步之前先读设备、按机型匹配，没连手机就直接失败，
+ * 等于把一件与机型无关的事，硬绑上了"必须先插手机"的前提。
+ *
+ * 挑法：明确标了 tea_core_donor 的优先，其次实机验证过的，
+ * 再次 notes 里提到 tea.product 的；reference_only 一律排除。
+ *
+ * @param {object} manifest 模板清单
+ * @param {string} library  模板库根目录
+ * @param {(p: string) => boolean} [exists] 文件存在性判断，便于测试注入
+ * @returns {{template: object, relative: string, path: string} | null}
+ */
+function pickTeaDonor(manifest, library, exists) {
+  const nodePath = require('node:path');
+  const has = typeof exists === 'function' ? exists : () => true;
+  const templates = (manifest.templates || [])
+    .filter((t) => Array.isArray(t.files) && t.files.length && !t.reference_only);
+
+  const ranked = templates
+    .map((template) => {
+      let score = 0;
+      if (template.tea_core_donor) score += 8;
+      if (template.real_device_verified) score += 4;
+      if (/tea\.product/.test(String(template.notes || ''))) score += 2;
+      return { template, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  for (const { template } of ranked) {
+    for (const file of template.files) {
+      const relative = typeof file === 'string' ? file : (file && file.path);
+      if (!relative) continue;
+      const full = nodePath.join(library, relative);
+      if (!has(full)) continue;
+      return { template, relative, path: full };
+    }
+  }
+  return null;
+}
+
+/**
  * 自动决定槽位镜像。
  *
  * 模板的 files 数组通常是 [A, B]；两者内容相同时（slot_files_note 说明了这点）
@@ -118,4 +166,4 @@ function pickTeaSlotFile(template, status = {}) {
   return { relative: files[Math.min(index, files.length - 1)], slot: index === 1 ? 'B' : 'A' };
 }
 
-module.exports = { androidMajor, deviceIdentity, matchTeaTemplate, pickTeaSlotFile };
+module.exports = { androidMajor, deviceIdentity, matchTeaTemplate, pickTeaSlotFile, pickTeaDonor };
