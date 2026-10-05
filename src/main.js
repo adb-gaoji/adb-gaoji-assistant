@@ -918,20 +918,16 @@ async function dispatchAction(action, payload = {}) {
       const templates = manifest.templates.filter((item) => Array.isArray(item.files) && item.files.length);
       if (!templates.length) return { code: 1, stdout: '', stderr: 'Tea 模板库为空。' };
 
-      // 以前这里弹两个框让用户选模板和槽位。用户不可能知道该选哪个——
-      // 设备代号、机型、Android 版本、活动槽位都是程序能读到的，
-      // 让用户猜等于把选错的风险转嫁给他。现在全部自动判定。
-      const status = await getStatus();
-      const matched = teaMatcher.matchTeaTemplate(manifest, status);
-      if (!matched.ok) return { code: 2, stdout: '', stderr: `未能自动匹配 Tea 模板，已阻止输出。\n\n${matched.reason}` };
-      const template = matched.template;
-      if (template.reference_only) return { code: 2, stdout: '', stderr: `${template.model} 模板标记为 reference_only，只能用于结构参考，已阻止生成可刷镜像。\n${template.notes}` };
+      // 顺序很重要：**先让用户选原厂 boot，再自动挑供体**。
+      //
+      // 旧实现反着来——先 getStatus() 读手机、按机型匹配模板，读不到设备
+      // 信息就直接 return 失败，用户连"选 boot"那一步都走不到。但 Tea 的
+      // 运行时（tea64 / tea32 / teapolicy / tea.product）是 ARM64 通用件，
+      // **不随机型变化**：制作一张镜像本来只需要「一张原厂 boot + 一份完整
+      // 供体」。把一件与机型无关的事绑上"必须先插手机"，是设计错误。
+      //
+      // 现在设备信息只用于事后核对，不参与任何决策。
 
-      const slotPick = teaMatcher.pickTeaSlotFile(template, status);
-      if (!slotPick) return { code: 1, stdout: '', stderr: '匹配到的模板没有可用的镜像文件。' };
-      sendLog(`[Tea 制作] ${matched.reason}，槽位 ${slotPick.slot}（自动判定，无需选择）\n`);
-      const relative = slotPick.relative;
-      const source = path.join(library, relative);
 
       // ── 自动制作：用用户提供的原厂 boot 作为外壳 ──────────────────────
       // 没带 stockBoot 时，直接弹选择框让用户挑一张原厂 boot——
@@ -950,7 +946,25 @@ async function dispatchAction(action, payload = {}) {
       if (stockBoot) {
         const stockPath = stockBoot;
         if (!fs.existsSync(stockPath)) return { code: 1, stdout: '', stderr: `原厂 boot 不存在：${stockPath}` };
-        if (!fs.existsSync(source)) return { code: 1, stdout: '', stderr: `Tea 供体镜像不存在：${source}` };
+
+        // 自动挑一份最完整的 Tea 供体。这一步同样不看设备。
+        const donor = teaMatcher.pickTeaDonor(manifest, library, (p) => fs.existsSync(p));
+        if (!donor) return { code: 1, stdout: '', stderr: '模板库里没有可用的 Tea 供体（需要一份含完整 Tea 运行时的镜像）。' };
+        const template = donor.template;
+        const source = donor.path;
+        sendLog(`[Tea 制作] 自动选用供体：${template.id}（${template.model} / Android ${template.android}）\n`);
+
+        // 设备只用来核对：读得到就写进报告，读不到也照样制作。
+        let deviceNote = '未检测到设备（制作不需要设备，可忽略）';
+        try {
+          const status = await getStatus();
+          if (status && status.props && status.props.device) {
+            const pick = teaMatcher.pickTeaSlotFile(template, status);
+            deviceNote = `${status.props.manufacturer || ''} ${status.props.model || ''} / 代号 ${status.props.device} / Android ${status.props.android || '-'} / 当前槽位 ${status.props.slot || '-'}（供体槽位 ${pick ? pick.slot : 'A'}）`.trim();
+          }
+        } catch (error) {
+          // 读不到设备不影响制作
+        }
 
         const donorBuf = fs.readFileSync(source);
         const stockBuf = fs.readFileSync(stockPath);
@@ -969,14 +983,26 @@ async function dispatchAction(action, payload = {}) {
         const outSha = crypto.createHash('sha256').update(fs.readFileSync(staged)).digest('hex').toUpperCase();
         // 产物必须能被自己的解析器读回来，否则说明写出去的就是坏的。
         const recheck = bootImage.parse(fs.readFileSync(staged));
+        // vbmeta 核对：这是「做出来了但刷不进去」的关键指标，必须写进报告。
+        // 厂商 preflash 校验读的就是尾部 AVB footer 声明的偏移与大小，
+        // ramdisk 越过 vbmeta 就会被拒收（Preflash validation failed）。
+        const outAvb = bootImage.parseAvbFooter(fs.readFileSync(staged));
+        const outRamdiskEnd = recheck.ramdiskOffset + recheck.ramdiskSize;
+        const avbNote = outAvb
+          ? `vbmeta：位于 ${outAvb.vbmetaOffset}（${outAvb.vbmetaSize} 字节），ramdisk 结束于 ${outRamdiskEnd}，` +
+            `余量 ${outAvb.vbmetaOffset - outRamdiskEnd} 字节 —— ${outAvb.vbmetaOffset >= outRamdiskEnd ? '未越界，可刷' : '★越界，请勿刷入★'}`
+          : 'vbmeta：原镜像没有 AVB footer，尾部按原长重建';
         const report = [
           `来源：用户提供的原厂 boot`,
           `原厂镜像：${stockPath}`,
           `Tea 供体：${template.id}（${template.model} / Android ${template.android}）`,
+          `选用依据：${template.tea_core_donor ? '★ Tea 核心供体：唯一实测「国网不闪退」的第 3 代核心，运行时与机型无关，可移植到任意机型' : '模板库中的可用供体'}`,
+          `设备核对：${deviceNote}`,
           `输出：${staged}`,
           `SHA256：${outSha}`,
           `内核：保留原厂（${recheck.kernelSize} 字节，未被改动）`,
           `签名块：保留原厂（${recheck.signatureSize} 字节）`,
+          avbNote,
           '',
           '制作步骤：',
           ...built.report.map((line) => `  · ${line}`)
@@ -990,37 +1016,10 @@ async function dispatchAction(action, payload = {}) {
           stderr: ''
         };
       }
-      if (!fs.existsSync(source)) return { code: 1, stdout: '', stderr: `模板镜像不存在：${source}` };
-      const sourceSha256 = crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex').toUpperCase();
-      if (template.sha256 && sourceSha256 !== String(template.sha256).toUpperCase()) {
-        return { code: 1, stdout: '', stderr: `Tea 模板校验失败，已阻止输出。\n期望：${template.sha256}\n实际：${sourceSha256}` };
-      }
-      const workspace = path.join(app.getPath('desktop'), 'Tea制作');
-      const staged = uniqueOutputPath(workspace, path.basename(source));
-      fs.copyFileSync(source, staged);
-      const sha256 = crypto.createHash('sha256').update(fs.readFileSync(staged)).digest('hex').toUpperCase();
-      if (sha256 !== sourceSha256) return { code: 1, stdout: '', stderr: 'Tea 模板复制后校验不一致，已阻止继续。' };
-      const report = [
-        `模板库版本：${manifest.version}`,
-        `模板：${template.id}`,
-        `机型：${template.model}`,
-        `设备代号：${template.code}`,
-        `Android：${template.android}`,
-        `分区：${template.partition || 'boot'}`,
-        `槽位：${slotPick.slot}`,
-        `输出：${staged}`,
-        `SHA256：${sha256}`,
-        `实机验证：${template.real_device_verified ? '是' : '未标记'}`,
-        `说明：${template.notes}`
-      ].join('\n');
-      fs.writeFileSync(`${staged}.txt`, report, 'utf8');
-      sendLog(`[Tea 制作] 已生成：${staged}\n${report}\n`);
-      await shell.openPath(workspace);
-      return {
-        code: 0,
-        stdout: `Tea 模板镜像已生成。刷入前必须再次核对机型、Android 版本、分区和槽位。\n\n${report}`,
-        stderr: ''
-      };
+      // 走到这里说明既没给原厂 boot，用户也取消了选择框。
+      // 以前这里有一段「直接把模板镜像复制出去」的兜底，但它会误导用户——
+      // 对着一张别的机型的镜像以为是自己"制作"出来的。现在明确拒绝。
+      return { code: 1, stdout: '', stderr: '未选择原厂 boot，已取消制作。' };
     }
     case 'install-driver': {
       const installer = path.join(getResourceRoot(), 'drivers', '一键安装安卓驱动.exe');
